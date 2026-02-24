@@ -144,6 +144,7 @@ function resetStaged() {
   if (!serverState) return;
   stagedHand = serverState.your_hand.map(c => ({ ...c }));
   stagedTable = serverState.table.map(meld => meld.map(c => ({ ...c })));
+  sortTableRuns();
 }
 
 function syncStaged() {
@@ -152,6 +153,7 @@ function syncStaged() {
   stagedTable = serverState.table.map(meld => meld.map(c => ({ ...c })));
   // Hand preserves the player's custom ordering
   stagedHand = syncHandOrder(stagedHand, serverState.your_hand);
+  sortTableRuns();
 }
 
 function syncHandOrder(currentHand, newServerHand) {
@@ -362,6 +364,7 @@ function onDropMeld(e, targetMeldIdx) {
   }
 
   cleanEmptyMelds();
+  sortTableRuns();
   dragSource = null;
   renderGame();
 }
@@ -377,6 +380,7 @@ function onDropNewMeld(e) {
 
   stagedTable.push([card]);
   cleanEmptyMelds();
+  sortTableRuns();
   dragSource = null;
   renderGame();
 }
@@ -397,6 +401,41 @@ function removeCardFromSource(source) {
 
 function cleanEmptyMelds() {
   stagedTable = stagedTable.filter(meld => meld.length > 0);
+}
+
+// ---- Run sorting ----
+const RANK_ORDER = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+
+function isRunMeld(cards) {
+  if (cards.length < 2) return false;
+  const suit = cards[0].suit;
+  return cards.every(c => c.suit === suit);
+}
+
+function sortRunMeld(cards) {
+  const indices = cards.map(c => RANK_ORDER.indexOf(c.rank));
+  const sorted = [...cards].sort((a, b) =>
+    RANK_ORDER.indexOf(a.rank) - RANK_ORDER.indexOf(b.rank)
+  );
+  // Check if it's a normal consecutive run
+  const si = sorted.map(c => RANK_ORDER.indexOf(c.rank));
+  if (si[si.length - 1] - si[0] === si.length - 1) return sorted;
+  // Wraparound: find the largest gap in the sorted sequence (including wrap gap)
+  let maxGap = 0, maxGapPos = 0;
+  for (let i = 0; i < si.length - 1; i++) {
+    const gap = si[i + 1] - si[i];
+    if (gap > maxGap) { maxGap = gap; maxGapPos = i + 1; }
+  }
+  const wrapGap = RANK_ORDER.length - si[si.length - 1] + si[0];
+  if (wrapGap > maxGap) return sorted; // no rotation needed
+  // Rotate: cards from maxGapPos onward come first
+  return [...sorted.slice(maxGapPos), ...sorted.slice(0, maxGapPos)];
+}
+
+function sortTableRuns() {
+  stagedTable = stagedTable.map(meld =>
+    isRunMeld(meld) ? sortRunMeld(meld) : meld
+  );
 }
 
 // ---- Hand reordering ----
