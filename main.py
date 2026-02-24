@@ -58,9 +58,10 @@ async def broadcast_lobby_state():
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
-    player_id = uuid.uuid4().hex
-    connections[player_id] = ws
-    await send(ws, {"type": "connected", "player_id": player_id})
+    # Use a mutable container so the reconnect handler can update the id
+    pid = [uuid.uuid4().hex]
+    connections[pid[0]] = ws
+    await send(ws, {"type": "connected", "player_id": pid[0]})
     await send(ws, {"type": "lobby_state", "games": lobby.list_games()})
 
     try:
@@ -68,8 +69,22 @@ async def websocket_endpoint(ws: WebSocket):
             raw = await ws.receive_text()
             msg = json.loads(raw)
             msg_type = msg.get("type")
+            player_id = pid[0]
 
-            if msg_type == "create_game":
+            if msg_type == "hello":
+                # Reconnect: restore previous session if it still exists
+                saved_id = msg.get("saved_player_id", "")
+                if saved_id and saved_id in player_games:
+                    connections.pop(player_id, None)
+                    pid[0] = saved_id
+                    connections[saved_id] = ws
+                    await send(ws, {"type": "connected", "player_id": saved_id})
+                    game_id = player_games[saved_id]
+                    await broadcast_game_state(game_id)
+                else:
+                    await send(ws, {"type": "lobby_state", "games": lobby.list_games()})
+
+            elif msg_type == "create_game":
                 name = msg.get("name", "Player").strip() or "Player"
                 if player_id in player_games:
                     await send(ws, {"type": "error", "message": "Already in a game"})
@@ -152,20 +167,20 @@ async def websocket_endpoint(ws: WebSocket):
                 await send(ws, {"type": "error", "message": f"Unknown message type: {msg_type}"})
 
     except WebSocketDisconnect:
+        player_id = pid[0]
         connections.pop(player_id, None)
-        game_id = player_games.pop(player_id, None)
+        # Keep player_games intact so the player can reconnect mid-game.
+        # Only clean up if the game is still in the waiting lobby (not started).
+        game_id = player_games.get(player_id)
         if game_id:
             game = lobby.get_game(game_id)
-            if game:
-                # Remove player from game
+            if game and game.status == "waiting":
                 game.players = [p for p in game.players if p['id'] != player_id]
+                player_games.pop(player_id, None)
                 if not game.players:
                     lobby.remove_game(game_id)
-                elif game.creator_id == player_id and game.players:
-                    # Transfer creator
-                    game.creator_id = game.players[0]['id']
-                    if game.status == "playing":
-                        # Adjust current player index
-                        game.current_player_idx = game.current_player_idx % len(game.players)
+                else:
+                    if game.creator_id == player_id:
+                        game.creator_id = game.players[0]['id']
                     await broadcast_game_state(game_id)
         await broadcast_lobby_state()

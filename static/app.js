@@ -19,6 +19,13 @@ function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
 
+  ws.onopen = () => {
+    const savedId = localStorage.getItem("mishmish-player-id");
+    if (savedId) {
+      send({ type: "hello", saved_player_id: savedId });
+    }
+  };
+
   ws.onmessage = (evt) => {
     const msg = JSON.parse(evt.data);
     handleMessage(msg);
@@ -43,6 +50,7 @@ function handleMessage(msg) {
   switch (msg.type) {
     case "connected":
       playerId = msg.player_id;
+      localStorage.setItem("mishmish-player-id", playerId);
       break;
 
     case "lobby_state":
@@ -60,6 +68,7 @@ function handleMessage(msg) {
     case "game_state":
       serverState = msg.state;
       isCreator = serverState.is_creator;
+      inGame = true;
       if (serverState.your_turn && !prevYourTurn) playTurnSound();
       prevYourTurn = serverState.your_turn;
       if (serverState.status === "ended") {
