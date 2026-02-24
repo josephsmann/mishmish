@@ -138,6 +138,7 @@ class Game:
             ),
             "table": self.table,
             "draw_pile_size": len(self.draw_pile),
+            "is_creator": player_id == self.creator_id,
         }
 
     def _get_current_player(self) -> Optional[Dict]:

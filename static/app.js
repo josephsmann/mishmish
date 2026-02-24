@@ -54,6 +54,7 @@ function handleMessage(msg) {
 
     case "game_state":
       serverState = msg.state;
+      isCreator = serverState.is_creator;
       if (serverState.status === "ended") {
         resetStaged();
         showView("ended");
