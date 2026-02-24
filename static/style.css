@@ -523,6 +523,19 @@ button:disabled {
   flex: 1;
 }
 
+#btn-sync {
+  flex: 0;
+  padding: 10px 14px;
+  background: #2d5a2d;
+  color: #9dbf9d;
+  font-size: 1.1rem;
+}
+
+#btn-sync:hover:not(:disabled) {
+  background: #3a7a3a;
+  color: #fff;
+}
+
 #btn-confirm {
   background: #4caf50;
   color: #fff;

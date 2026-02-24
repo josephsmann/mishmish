@@ -561,6 +561,10 @@ function confirmTurn() {
   send({ type: "play_turn", table: stagedTable });
 }
 
+function syncState() {
+  if (ws) ws.close();
+}
+
 function resetTurn() {
   if (!serverState) return;
   stagedHand = handSnapshot.map(c => ({ ...c }));
