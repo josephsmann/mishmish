@@ -13,6 +13,7 @@ let textScale = 1;
 let handOverlap = 0;
 let soundEnabled = false;
 let prevYourTurn = false;
+let handSnapshot = [];
 
 // ---- WebSocket ----
 function connect() {
@@ -163,6 +164,8 @@ function syncStaged() {
   // Hand preserves the player's custom ordering
   stagedHand = syncHandOrder(stagedHand, serverState.your_hand);
   sortTableRuns();
+  // Snapshot hand order at start of each server sync so resetTurn can restore it
+  handSnapshot = stagedHand.map(c => ({ ...c }));
 }
 
 function syncHandOrder(currentHand, newServerHand) {
@@ -559,7 +562,10 @@ function confirmTurn() {
 }
 
 function resetTurn() {
-  resetStaged();
+  if (!serverState) return;
+  stagedHand = handSnapshot.map(c => ({ ...c }));
+  stagedTable = serverState.table.map(meld => meld.map(c => ({ ...c })));
+  sortTableRuns();
   renderGame();
 }
 
