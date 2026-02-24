@@ -48,6 +48,14 @@ async def broadcast_game_state(game_id: str):
             await send(ws, {"type": "game_state", "state": state})
 
 
+def cleanup_ended_game(game_id: str):
+    game = lobby.get_game(game_id)
+    if game and game.status == "ended":
+        for p in game.players:
+            player_games.pop(p['id'], None)
+        lobby.remove_game(game_id)
+
+
 async def broadcast_lobby_state():
     games = lobby.list_games()
     for pid, ws in connections.items():
@@ -72,14 +80,15 @@ async def websocket_endpoint(ws: WebSocket):
             player_id = pid[0]
 
             if msg_type == "hello":
-                # Reconnect: restore previous session if it still exists
+                # Reconnect: restore previous session only if game is still in progress
                 saved_id = msg.get("saved_player_id", "")
-                if saved_id and saved_id in player_games:
+                game_id = player_games.get(saved_id)
+                game = lobby.get_game(game_id) if game_id else None
+                if saved_id and game and game.status == "playing":
                     connections.pop(player_id, None)
                     pid[0] = saved_id
                     connections[saved_id] = ws
                     await send(ws, {"type": "connected", "player_id": saved_id})
-                    game_id = player_games[saved_id]
                     await broadcast_game_state(game_id)
                 else:
                     await send(ws, {"type": "lobby_state", "games": lobby.list_games()})
@@ -147,6 +156,7 @@ async def websocket_endpoint(ws: WebSocket):
                     await send(ws, {"type": "error", "message": "Not your turn or empty deck"})
                     continue
                 await broadcast_game_state(game_id)
+                cleanup_ended_game(game_id)
 
             elif msg_type == "play_turn":
                 game_id = player_games.get(player_id)
@@ -162,6 +172,7 @@ async def websocket_endpoint(ws: WebSocket):
                     await send(ws, {"type": "error", "message": reason})
                     continue
                 await broadcast_game_state(game_id)
+                cleanup_ended_game(game_id)
 
             else:
                 await send(ws, {"type": "error", "message": f"Unknown message type: {msg_type}"})

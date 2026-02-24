@@ -574,17 +574,7 @@ function renderEnded() {
 }
 
 function backToLobby() {
-  inGame = false;
-  isCreator = false;
-  serverState = null;
-  stagedHand = [];
-  stagedTable = [];
-  showView("lobby");
-  send({ type: "lobby_request" }); // server will ignore; lobby state sent on next change
-  // Request fresh lobby state by reconnecting or just wait for next broadcast
-  // For immediate update, we can ask the server:
-  // Actually, we just trust the server to broadcast lobby state when needed.
-  // Reload page to cleanly reconnect.
+  localStorage.removeItem("mishmish-player-id");
   location.reload();
 }
 
