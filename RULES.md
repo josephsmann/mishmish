@@ -24,9 +24,9 @@ On your turn you must do exactly one of the following:
 ## Valid Melds
 
 ### Set (Three or More of a Kind)
-Three or more cards of the same rank, each of a **different suit**. Because two decks are in play, the maximum is four cards (one per suit).
+Three or more cards of the same rank, with **at least three different suits** represented. Because two decks are in play, a suit may appear twice — but at least three distinct suits must be present.
 
-> Example: 7♠ 7♥ 7♣ is valid. 7♠ 7♥ 7♠ is **not** valid (duplicate card).
+> Example: 7♠ 7♥ 7♣ is valid. 8♥ 8♣ 8♠ 8♥ is valid (three distinct suits, one repeated). 7♠ 7♥ 7♠ is **not** valid (only two distinct suits).
 
 ### Run (Sequence of Three or More)
 Three or more cards of consecutive rank, all of the **same suit**. Ranks wrap around modulo 13, so a run may cross the King–Ace boundary.
