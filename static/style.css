@@ -1,5 +1,7 @@
 :root {
   --card-scale: 1;
+  --card-text-scale: 1;
+  --hand-overlap: 0px;
 }
 
 *, *::before, *::after {
@@ -319,6 +321,21 @@ button:disabled {
   align-items: center;
 }
 
+#hand-area .card {
+  margin-left: var(--hand-overlap);
+  position: relative;
+  z-index: 1;
+}
+
+#hand-area .card:first-child {
+  margin-left: 0;
+}
+
+#hand-area .card:hover,
+#hand-area .card.draggable:hover {
+  z-index: 10;
+}
+
 /* ---- CARDS ---- */
 .card {
   width: calc(70px * var(--card-scale));
@@ -359,7 +376,7 @@ button:disabled {
   position: absolute;
   top: calc(4px * var(--card-scale));
   left: calc(6px * var(--card-scale));
-  font-size: calc(0.85rem * var(--card-scale));
+  font-size: calc(0.85rem * var(--card-scale) * var(--card-text-scale));
   font-weight: 700;
   line-height: 1;
 }
@@ -368,7 +385,7 @@ button:disabled {
   position: absolute;
   top: calc(18px * var(--card-scale));
   left: calc(6px * var(--card-scale));
-  font-size: calc(0.75rem * var(--card-scale));
+  font-size: calc(0.75rem * var(--card-scale) * var(--card-text-scale));
   line-height: 1;
 }
 
@@ -376,7 +393,7 @@ button:disabled {
   position: absolute;
   bottom: calc(4px * var(--card-scale));
   right: calc(6px * var(--card-scale));
-  font-size: calc(0.85rem * var(--card-scale));
+  font-size: calc(0.85rem * var(--card-scale) * var(--card-text-scale));
   font-weight: 700;
   line-height: 1;
   transform: rotate(180deg);
@@ -386,7 +403,7 @@ button:disabled {
   position: absolute;
   bottom: calc(18px * var(--card-scale));
   right: calc(6px * var(--card-scale));
-  font-size: calc(0.75rem * var(--card-scale));
+  font-size: calc(0.75rem * var(--card-scale) * var(--card-text-scale));
   line-height: 1;
   transform: rotate(180deg);
 }
@@ -396,30 +413,68 @@ button:disabled {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  font-size: calc(1.5rem * var(--card-scale));
+  font-size: calc(1.5rem * var(--card-scale) * var(--card-text-scale));
 }
 
-/* ---- CARD SIZE CONTROL ---- */
-.card-size-row {
+/* ---- SETTINGS ROW ---- */
+.settings-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 16px;
   margin-bottom: 6px;
   font-size: 0.75rem;
   color: #9dbf9d;
 }
 
-.card-size-row input[type="range"] {
-  width: 90px;
+.settings-row label {
+  white-space: nowrap;
+}
+
+.settings-row input[type="range"] {
+  width: 80px;
   accent-color: #f5c842;
   cursor: pointer;
+  vertical-align: middle;
+}
+
+.settings-row input[type="checkbox"] {
+  accent-color: #f5c842;
+  cursor: pointer;
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+}
+
+.setting-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 /* ---- HAND DRAG INDICATOR ---- */
 .card.hand-drag-over {
-  outline: 2px solid #f5c842;
-  outline-offset: 2px;
-  transform: translateY(-6px);
+  border-left: 3px solid #f5c842;
+  transform: translateX(6px) translateY(-4px);
+  z-index: 10;
+}
+
+/* ---- MELD DROP SLOT ---- */
+.card-drop-slot {
+  width: calc(18px * var(--card-scale));
+  height: calc(100px * var(--card-scale));
+  border: 2px dashed transparent;
+  border-radius: calc(8px * var(--card-scale));
+  background: transparent;
+  flex-shrink: 0;
+  transition: all 0.15s;
+  pointer-events: none;
+}
+
+.meld.drag-over .card-drop-slot {
+  width: calc(70px * var(--card-scale));
+  border-color: #f5c842;
+  background: rgba(245, 200, 66, 0.15);
 }
 
 /* ---- ACTION BAR ---- */

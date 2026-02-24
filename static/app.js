@@ -9,6 +9,10 @@ let isCreator = false;
 let playerName = "";
 let dragSource = null;
 let cardScale = 1;
+let textScale = 1;
+let handOverlap = 0;
+let soundEnabled = false;
+let prevYourTurn = false;
 
 // ---- WebSocket ----
 function connect() {
@@ -56,6 +60,8 @@ function handleMessage(msg) {
     case "game_state":
       serverState = msg.state;
       isCreator = serverState.is_creator;
+      if (serverState.your_turn && !prevYourTurn) playTurnSound();
+      prevYourTurn = serverState.your_turn;
       if (serverState.status === "ended") {
         resetStaged();
         showView("ended");
@@ -235,6 +241,11 @@ function renderTable(canAct) {
       const cardEl = makeCardEl(card, canAct, { from: "table", meldIdx, cardIdx });
       meldEl.appendChild(cardEl);
     });
+    if (canAct) {
+      const slot = document.createElement("div");
+      slot.className = "card-drop-slot";
+      meldEl.appendChild(slot);
+    }
     area.appendChild(meldEl);
   });
 }
@@ -426,11 +437,47 @@ function onDropHandArea(e) {
   renderGame();
 }
 
-// ---- Card size ----
+// ---- Display settings ----
 function setCardSize(scale) {
   cardScale = parseFloat(scale);
   document.documentElement.style.setProperty("--card-scale", cardScale);
   localStorage.setItem("mishmish-card-scale", cardScale);
+}
+
+function setTextSize(scale) {
+  textScale = parseFloat(scale);
+  document.documentElement.style.setProperty("--card-text-scale", textScale);
+  localStorage.setItem("mishmish-text-scale", textScale);
+}
+
+function setHandOverlap(px) {
+  handOverlap = parseInt(px, 10);
+  // px is 0 or negative; CSS margin-left applies the overlap
+  document.documentElement.style.setProperty("--hand-overlap", handOverlap + "px");
+  localStorage.setItem("mishmish-hand-overlap", handOverlap);
+}
+
+function toggleSound(enabled) {
+  soundEnabled = enabled;
+  localStorage.setItem("mishmish-sound", enabled ? "1" : "0");
+}
+
+function playTurnSound() {
+  if (!soundEnabled) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(660, ctx.currentTime);
+    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12);
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.5);
+  } catch (e) { /* AudioContext not available */ }
 }
 
 // ---- Actions ----
@@ -499,12 +546,30 @@ function escHtml(str) {
 }
 
 // ---- Init ----
-(function initCardScale() {
-  const saved = localStorage.getItem("mishmish-card-scale");
-  if (saved) {
-    const slider = document.getElementById("card-size-slider");
-    if (slider) slider.value = saved;
-    setCardSize(saved);
+(function initSettings() {
+  const cardSave = localStorage.getItem("mishmish-card-scale");
+  if (cardSave) {
+    const el = document.getElementById("card-size-slider");
+    if (el) el.value = cardSave;
+    setCardSize(cardSave);
+  }
+  const textSave = localStorage.getItem("mishmish-text-scale");
+  if (textSave) {
+    const el = document.getElementById("text-size-slider");
+    if (el) el.value = textSave;
+    setTextSize(textSave);
+  }
+  const overlapSave = localStorage.getItem("mishmish-hand-overlap");
+  if (overlapSave) {
+    const el = document.getElementById("overlap-slider");
+    if (el) el.value = overlapSave;
+    setHandOverlap(overlapSave);
+  }
+  const soundSave = localStorage.getItem("mishmish-sound");
+  if (soundSave === "1") {
+    soundEnabled = true;
+    const el = document.getElementById("sound-toggle");
+    if (el) el.checked = true;
   }
 })();
 

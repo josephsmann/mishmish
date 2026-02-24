@@ -61,10 +61,26 @@
       </div>
 
       <div class="hand-section">
-        <div class="card-size-row">
-          <label for="card-size-slider">Card size</label>
-          <input id="card-size-slider" type="range" min="0.55" max="1.4" step="0.05" value="1"
-            oninput="setCardSize(this.value)" />
+        <div class="settings-row">
+          <div class="setting-group">
+            <label for="card-size-slider">Card size</label>
+            <input id="card-size-slider" type="range" min="0.55" max="1.4" step="0.05" value="1"
+              oninput="setCardSize(this.value)" />
+          </div>
+          <div class="setting-group">
+            <label for="text-size-slider">Text size</label>
+            <input id="text-size-slider" type="range" min="0.5" max="1.8" step="0.05" value="1"
+              oninput="setTextSize(this.value)" />
+          </div>
+          <div class="setting-group">
+            <label for="overlap-slider">Overlap</label>
+            <input id="overlap-slider" type="range" min="-60" max="0" step="2" value="0"
+              oninput="setHandOverlap(this.value)" />
+          </div>
+          <div class="setting-group">
+            <input id="sound-toggle" type="checkbox" onchange="toggleSound(this.checked)" />
+            <label for="sound-toggle">Sound on my turn</label>
+          </div>
         </div>
         <h3>Your Hand</h3>
         <div id="hand-area"></div>
