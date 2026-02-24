@@ -48,6 +48,24 @@ async def broadcast_game_state(game_id: str):
             await send(ws, {"type": "game_state", "state": state})
 
 
+async def leave_waiting_game(player_id: str):
+    """Remove player from their current game if it hasn't started yet."""
+    old_game_id = player_games.get(player_id)
+    if not old_game_id:
+        return
+    old_game = lobby.get_game(old_game_id)
+    if not old_game or old_game.status != "waiting":
+        return
+    old_game.players = [p for p in old_game.players if p['id'] != player_id]
+    player_games.pop(player_id, None)
+    if not old_game.players:
+        lobby.remove_game(old_game_id)
+    else:
+        if old_game.creator_id == player_id:
+            old_game.creator_id = old_game.players[0]['id']
+        await broadcast_game_state(old_game_id)
+
+
 def cleanup_ended_game(game_id: str):
     game = lobby.get_game(game_id)
     if game and game.status == "ended":
@@ -97,6 +115,7 @@ async def websocket_endpoint(ws: WebSocket):
 
             elif msg_type == "create_game":
                 name = msg.get("name", "Player").strip() or "Player"
+                await leave_waiting_game(player_id)
                 if player_id in player_games:
                     await send(ws, {"type": "error", "message": "Already in a game"})
                     continue
@@ -114,6 +133,7 @@ async def websocket_endpoint(ws: WebSocket):
             elif msg_type == "join_game":
                 game_id = msg.get("game_id")
                 name = msg.get("name", "Player").strip() or "Player"
+                await leave_waiting_game(player_id)
                 if player_id in player_games:
                     await send(ws, {"type": "error", "message": "Already in a game"})
                     continue
