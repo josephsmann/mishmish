@@ -312,6 +312,14 @@ function onDragStart(e, sourceData) {
   dragSource = sourceData;
   e.dataTransfer.effectAllowed = "move";
   e.dataTransfer.setData("text/plain", JSON.stringify(sourceData));
+  // Use a semi-transparent clone as the drag image
+  const ghost = e.target.cloneNode(true);
+  ghost.style.opacity = "0.45";
+  ghost.style.position = "fixed";
+  ghost.style.top = "-1000px";
+  document.body.appendChild(ghost);
+  e.dataTransfer.setDragImage(ghost, ghost.offsetWidth / 2, ghost.offsetHeight / 2);
+  setTimeout(() => document.body.removeChild(ghost), 0);
 }
 
 function onDragEnd(e) {
