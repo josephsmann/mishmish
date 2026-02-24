@@ -206,12 +206,13 @@ function renderGame() {
   }
 
   const canAct = serverState.your_turn && serverState.status === "playing";
+  const canReorder = serverState.status === "playing";
 
   // Render table
   renderTable(canAct);
 
   // Render hand
-  renderHand(canAct);
+  renderHand(canAct, canReorder);
 
   // Buttons
   document.getElementById("btn-draw").disabled = !canAct;
@@ -242,24 +243,27 @@ function renderTable(canAct) {
   });
 }
 
-function renderHand(canAct) {
+function renderHand(canAct, canReorder) {
   const area = document.getElementById("hand-area");
   area.innerHTML = "";
-  // Drop on empty space at end of hand = move to end
-  area.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; });
-  area.addEventListener("drop", onDropHandArea);
+  if (canReorder) {
+    area.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; });
+    area.addEventListener("drop", onDropHandArea);
+  }
 
   stagedHand.forEach((card, cardIdx) => {
-    const cardEl = makeCardEl(card, canAct, { from: "hand", cardIdx });
-    // Each card is a drop target: insert card before it
-    cardEl.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      e.dataTransfer.dropEffect = "move";
-      cardEl.classList.add("hand-drag-over");
-    });
-    cardEl.addEventListener("dragleave", () => cardEl.classList.remove("hand-drag-over"));
-    cardEl.addEventListener("drop", (e) => onDropHandCard(e, cardIdx));
+    // Cards are draggable if the player can act (play to table) or just reorder
+    const cardEl = makeCardEl(card, canAct || canReorder, { from: "hand", cardIdx });
+    if (canReorder) {
+      cardEl.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = "move";
+        cardEl.classList.add("hand-drag-over");
+      });
+      cardEl.addEventListener("dragleave", () => cardEl.classList.remove("hand-drag-over"));
+      cardEl.addEventListener("drop", (e) => onDropHandCard(e, cardIdx));
+    }
     area.appendChild(cardEl);
   });
 }
