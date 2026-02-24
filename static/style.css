@@ -365,6 +365,13 @@ button:disabled {
   cursor: grabbing;
 }
 
+.card.dragging {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: transparent;
+}
+
 .card.red {
   color: #cc1111;
 }
@@ -487,7 +494,6 @@ button:disabled {
 }
 
 .meld.drag-over .card-drop-slot {
-  width: calc(70px * var(--card-scale));
   border-color: #f5c842;
   background: rgba(245, 200, 66, 0.15);
 }
