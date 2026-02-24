@@ -384,7 +384,7 @@ button:disabled {
 
 .card-suit-top {
   position: absolute;
-  top: calc(18px * var(--card-scale));
+  top: calc(22px * var(--card-scale));
   left: calc(6px * var(--card-scale));
   font-size: calc(0.75rem * var(--card-font-scale));
   line-height: 1;
@@ -402,7 +402,7 @@ button:disabled {
 
 .card-suit-bot {
   position: absolute;
-  bottom: calc(18px * var(--card-scale));
+  bottom: calc(22px * var(--card-scale));
   right: calc(6px * var(--card-scale));
   font-size: calc(0.75rem * var(--card-font-scale));
   line-height: 1;
