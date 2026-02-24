@@ -1,3 +1,7 @@
+:root {
+  --card-scale: 1;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -257,8 +261,8 @@ button:disabled {
   padding: 6px 10px;
   gap: -8px;
   position: relative;
-  min-width: 80px;
-  min-height: 110px;
+  min-width: calc(80px * var(--card-scale));
+  min-height: calc(110px * var(--card-scale));
   align-items: center;
   border: 1px solid rgba(255,255,255,0.1);
   transition: background 0.15s;
@@ -270,7 +274,7 @@ button:disabled {
 }
 
 .meld .card {
-  margin-left: -10px;
+  margin-left: calc(-10px * var(--card-scale));
 }
 
 .meld .card:first-child {
@@ -281,8 +285,8 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 80px;
-  min-height: 110px;
+  min-width: calc(80px * var(--card-scale));
+  min-height: calc(110px * var(--card-scale));
   border: 2px dashed #6a9e6a;
   border-radius: 10px;
   color: #6a9e6a;
@@ -311,17 +315,17 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  min-height: 110px;
+  min-height: calc(110px * var(--card-scale));
   align-items: center;
 }
 
 /* ---- CARDS ---- */
 .card {
-  width: 70px;
-  height: 100px;
+  width: calc(70px * var(--card-scale));
+  height: calc(100px * var(--card-scale));
   background: #fff;
   border: 1px solid #ccc;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--card-scale));
   position: relative;
   user-select: none;
   flex-shrink: 0;
@@ -353,26 +357,26 @@ button:disabled {
 
 .card-rank-top {
   position: absolute;
-  top: 4px;
-  left: 6px;
-  font-size: 0.85rem;
+  top: calc(4px * var(--card-scale));
+  left: calc(6px * var(--card-scale));
+  font-size: calc(0.85rem * var(--card-scale));
   font-weight: 700;
   line-height: 1;
 }
 
 .card-suit-top {
   position: absolute;
-  top: 18px;
-  left: 6px;
-  font-size: 0.75rem;
+  top: calc(18px * var(--card-scale));
+  left: calc(6px * var(--card-scale));
+  font-size: calc(0.75rem * var(--card-scale));
   line-height: 1;
 }
 
 .card-rank-bot {
   position: absolute;
-  bottom: 4px;
-  right: 6px;
-  font-size: 0.85rem;
+  bottom: calc(4px * var(--card-scale));
+  right: calc(6px * var(--card-scale));
+  font-size: calc(0.85rem * var(--card-scale));
   font-weight: 700;
   line-height: 1;
   transform: rotate(180deg);
@@ -380,9 +384,9 @@ button:disabled {
 
 .card-suit-bot {
   position: absolute;
-  bottom: 18px;
-  right: 6px;
-  font-size: 0.75rem;
+  bottom: calc(18px * var(--card-scale));
+  right: calc(6px * var(--card-scale));
+  font-size: calc(0.75rem * var(--card-scale));
   line-height: 1;
   transform: rotate(180deg);
 }
@@ -392,7 +396,30 @@ button:disabled {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  font-size: 1.5rem;
+  font-size: calc(1.5rem * var(--card-scale));
+}
+
+/* ---- CARD SIZE CONTROL ---- */
+.card-size-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 0.75rem;
+  color: #9dbf9d;
+}
+
+.card-size-row input[type="range"] {
+  width: 90px;
+  accent-color: #f5c842;
+  cursor: pointer;
+}
+
+/* ---- HAND DRAG INDICATOR ---- */
+.card.hand-drag-over {
+  outline: 2px solid #f5c842;
+  outline-offset: 2px;
+  transform: translateY(-6px);
 }
 
 /* ---- ACTION BAR ---- */

@@ -8,6 +8,7 @@ let inGame = false;
 let isCreator = false;
 let playerName = "";
 let dragSource = null;
+let cardScale = 1;
 
 // ---- WebSocket ----
 function connect() {
@@ -60,7 +61,11 @@ function handleMessage(msg) {
         showView("ended");
         renderEnded();
       } else if (serverState.status === "playing") {
-        resetStaged();
+        if (serverState.your_turn) {
+          resetStaged();
+        } else {
+          syncStaged();
+        }
         showView("game");
         renderGame();
       } else {
@@ -135,9 +140,47 @@ function startGame() {
 // ---- Game ----
 function resetStaged() {
   if (!serverState) return;
-  // Deep copy
   stagedHand = serverState.your_hand.map(c => ({ ...c }));
   stagedTable = serverState.table.map(meld => meld.map(c => ({ ...c })));
+}
+
+function syncStaged() {
+  if (!serverState) return;
+  // Table is always updated from server
+  stagedTable = serverState.table.map(meld => meld.map(c => ({ ...c })));
+  // Hand preserves the player's custom ordering
+  stagedHand = syncHandOrder(stagedHand, serverState.your_hand);
+}
+
+function syncHandOrder(currentHand, newServerHand) {
+  const newCount = {};
+  newServerHand.forEach(c => {
+    const k = c.rank + c.suit;
+    newCount[k] = (newCount[k] || 0) + 1;
+  });
+  // Keep cards from the current ordered hand that still exist
+  const usedCount = {};
+  const preserved = currentHand.filter(c => {
+    const k = c.rank + c.suit;
+    usedCount[k] = (usedCount[k] || 0) + 1;
+    return usedCount[k] <= (newCount[k] || 0);
+  });
+  // Append any new cards (e.g. drawn by opponent doesn't apply here, but handles edge cases)
+  const preservedCount = {};
+  preserved.forEach(c => {
+    const k = c.rank + c.suit;
+    preservedCount[k] = (preservedCount[k] || 0) + 1;
+  });
+  const addedCount = {};
+  const newCards = [];
+  newServerHand.forEach(c => {
+    const k = c.rank + c.suit;
+    addedCount[k] = (addedCount[k] || 0) + 1;
+    if (addedCount[k] > (preservedCount[k] || 0)) {
+      newCards.push({ ...c });
+    }
+  });
+  return [...preserved, ...newCards];
 }
 
 function renderGame() {
@@ -202,8 +245,21 @@ function renderTable(canAct) {
 function renderHand(canAct) {
   const area = document.getElementById("hand-area");
   area.innerHTML = "";
+  // Drop on empty space at end of hand = move to end
+  area.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; });
+  area.addEventListener("drop", onDropHandArea);
+
   stagedHand.forEach((card, cardIdx) => {
     const cardEl = makeCardEl(card, canAct, { from: "hand", cardIdx });
+    // Each card is a drop target: insert card before it
+    cardEl.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      cardEl.classList.add("hand-drag-over");
+    });
+    cardEl.addEventListener("dragleave", () => cardEl.classList.remove("hand-drag-over"));
+    cardEl.addEventListener("drop", (e) => onDropHandCard(e, cardIdx));
     area.appendChild(cardEl);
   });
 }
@@ -329,6 +385,54 @@ function cleanEmptyMelds() {
   stagedTable = stagedTable.filter(meld => meld.length > 0);
 }
 
+// ---- Hand reordering ----
+function onDropHandCard(e, targetIdx) {
+  e.preventDefault();
+  e.stopPropagation();
+  document.querySelectorAll(".hand-drag-over").forEach(el => el.classList.remove("hand-drag-over"));
+  if (!dragSource) return;
+
+  if (dragSource.from === "table") {
+    showError("Cards cannot be returned to hand");
+    dragSource = null;
+    return;
+  }
+
+  const sourceIdx = dragSource.cardIdx;
+  dragSource = null;
+  if (sourceIdx === targetIdx) return;
+
+  const [card] = stagedHand.splice(sourceIdx, 1);
+  const adjustedTarget = sourceIdx < targetIdx ? targetIdx - 1 : targetIdx;
+  stagedHand.splice(adjustedTarget, 0, card);
+  renderGame();
+}
+
+function onDropHandArea(e) {
+  e.preventDefault();
+  document.querySelectorAll(".hand-drag-over").forEach(el => el.classList.remove("hand-drag-over"));
+  if (!dragSource) return;
+
+  if (dragSource.from === "table") {
+    showError("Cards cannot be returned to hand");
+    dragSource = null;
+    return;
+  }
+
+  const sourceIdx = dragSource.cardIdx;
+  dragSource = null;
+  const [card] = stagedHand.splice(sourceIdx, 1);
+  stagedHand.push(card);
+  renderGame();
+}
+
+// ---- Card size ----
+function setCardSize(scale) {
+  cardScale = parseFloat(scale);
+  document.documentElement.style.setProperty("--card-scale", cardScale);
+  localStorage.setItem("mishmish-card-scale", cardScale);
+}
+
 // ---- Actions ----
 function drawCard() {
   send({ type: "draw_card" });
@@ -395,4 +499,13 @@ function escHtml(str) {
 }
 
 // ---- Init ----
+(function initCardScale() {
+  const saved = localStorage.getItem("mishmish-card-scale");
+  if (saved) {
+    const slider = document.getElementById("card-size-slider");
+    if (slider) slider.value = saved;
+    setCardSize(saved);
+  }
+})();
+
 connect();
