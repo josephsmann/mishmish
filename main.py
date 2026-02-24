@@ -84,12 +84,14 @@ async def websocket_endpoint(ws: WebSocket):
                 saved_id = msg.get("saved_player_id", "")
                 game_id = player_games.get(saved_id)
                 game = lobby.get_game(game_id) if game_id else None
-                if saved_id and game and game.status == "playing":
+                if saved_id and game and game.status in ("waiting", "playing"):
                     connections.pop(player_id, None)
                     pid[0] = saved_id
                     connections[saved_id] = ws
                     await send(ws, {"type": "connected", "player_id": saved_id})
                     await broadcast_game_state(game_id)
+                    if game.status == "waiting":
+                        await broadcast_lobby_state()
                 else:
                     await send(ws, {"type": "lobby_state", "games": lobby.list_games()})
 
@@ -180,18 +182,6 @@ async def websocket_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         player_id = pid[0]
         connections.pop(player_id, None)
-        # Keep player_games intact so the player can reconnect mid-game.
-        # Only clean up if the game is still in the waiting lobby (not started).
-        game_id = player_games.get(player_id)
-        if game_id:
-            game = lobby.get_game(game_id)
-            if game and game.status == "waiting":
-                game.players = [p for p in game.players if p['id'] != player_id]
-                player_games.pop(player_id, None)
-                if not game.players:
-                    lobby.remove_game(game_id)
-                else:
-                    if game.creator_id == player_id:
-                        game.creator_id = game.players[0]['id']
-                    await broadcast_game_state(game_id)
+        # Keep player in their game so they can reconnect (handles iOS focus loss,
+        # brief network drops, etc). Games are only cleaned up when they end.
         await broadcast_lobby_state()
