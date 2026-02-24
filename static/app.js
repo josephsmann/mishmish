@@ -223,6 +223,7 @@ function renderGame() {
   document.getElementById("btn-draw").disabled = !canAct || hasStaged;
   document.getElementById("btn-confirm").disabled = !canAct;
   document.getElementById("btn-reset").disabled = !canAct;
+  document.getElementById("btn-sort-hand").disabled = !canReorder;
 
   // New meld zone visibility
   document.getElementById("new-meld-zone").style.display = canAct ? "flex" : "none";
@@ -441,6 +442,16 @@ function sortTableRuns() {
   stagedTable = stagedTable.map(meld =>
     isRunMeld(meld) ? sortRunMeld(meld) : meld
   );
+}
+
+function sortHand() {
+  const SUIT_ORDER = ['S', 'H', 'D', 'C'];
+  stagedHand.sort((a, b) => {
+    const suitDiff = SUIT_ORDER.indexOf(a.suit) - SUIT_ORDER.indexOf(b.suit);
+    if (suitDiff !== 0) return suitDiff;
+    return RANK_ORDER.indexOf(a.rank) - RANK_ORDER.indexOf(b.rank);
+  });
+  renderGame();
 }
 
 // ---- Hand reordering ----

@@ -453,6 +453,24 @@ button:disabled {
   gap: 5px;
 }
 
+/* ---- HAND HEADER ---- */
+.hand-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.hand-header h3 {
+  margin-bottom: 0;
+}
+
+.hand-header button {
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
 /* ---- HAND DRAG INDICATOR ---- */
 /* Use ::before for a glowing insertion bar; high specificity beats .draggable:hover */
 #hand-area .card.hand-drag-over,
