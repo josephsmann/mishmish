@@ -1,6 +1,7 @@
 :root {
   --card-scale: 1;
   --card-text-scale: 1;
+  --card-font-scale: 1; /* computed in JS: card-scale * text-scale */
   --hand-overlap: 0px;
 }
 
@@ -316,13 +317,13 @@ button:disabled {
 #hand-area {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 0;
   min-height: calc(110px * var(--card-scale));
   align-items: center;
 }
 
 #hand-area .card {
-  margin-left: var(--hand-overlap);
+  margin-left: calc(4px + var(--hand-overlap));
   position: relative;
   z-index: 1;
 }
@@ -376,7 +377,7 @@ button:disabled {
   position: absolute;
   top: calc(4px * var(--card-scale));
   left: calc(6px * var(--card-scale));
-  font-size: calc(0.85rem * var(--card-scale) * var(--card-text-scale));
+  font-size: calc(0.85rem * var(--card-font-scale));
   font-weight: 700;
   line-height: 1;
 }
@@ -385,7 +386,7 @@ button:disabled {
   position: absolute;
   top: calc(18px * var(--card-scale));
   left: calc(6px * var(--card-scale));
-  font-size: calc(0.75rem * var(--card-scale) * var(--card-text-scale));
+  font-size: calc(0.75rem * var(--card-font-scale));
   line-height: 1;
 }
 
@@ -393,7 +394,7 @@ button:disabled {
   position: absolute;
   bottom: calc(4px * var(--card-scale));
   right: calc(6px * var(--card-scale));
-  font-size: calc(0.85rem * var(--card-scale) * var(--card-text-scale));
+  font-size: calc(0.85rem * var(--card-font-scale));
   font-weight: 700;
   line-height: 1;
   transform: rotate(180deg);
@@ -403,7 +404,7 @@ button:disabled {
   position: absolute;
   bottom: calc(18px * var(--card-scale));
   right: calc(6px * var(--card-scale));
-  font-size: calc(0.75rem * var(--card-scale) * var(--card-text-scale));
+  font-size: calc(0.75rem * var(--card-font-scale));
   line-height: 1;
   transform: rotate(180deg);
 }
@@ -413,7 +414,7 @@ button:disabled {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  font-size: calc(1.5rem * var(--card-scale) * var(--card-text-scale));
+  font-size: calc(1.5rem * var(--card-font-scale));
 }
 
 /* ---- SETTINGS ROW ---- */
@@ -453,10 +454,24 @@ button:disabled {
 }
 
 /* ---- HAND DRAG INDICATOR ---- */
-.card.hand-drag-over {
-  border-left: 3px solid #f5c842;
-  transform: translateX(6px) translateY(-4px);
+/* Use ::before for a glowing insertion bar; high specificity beats .draggable:hover */
+#hand-area .card.hand-drag-over,
+#hand-area .card.draggable.hand-drag-over:hover {
+  transform: translateX(10px);
   z-index: 10;
+  transition: transform 0.08s;
+}
+
+#hand-area .card.hand-drag-over::before {
+  content: '';
+  position: absolute;
+  left: calc(-8px - 2px);
+  top: 4%;
+  height: 92%;
+  width: 4px;
+  background: #f5c842;
+  border-radius: 2px;
+  box-shadow: 0 0 8px 2px rgba(245, 200, 66, 0.7);
 }
 
 /* ---- MELD DROP SLOT ---- */

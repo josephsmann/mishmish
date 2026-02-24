@@ -441,12 +441,14 @@ function onDropHandArea(e) {
 function setCardSize(scale) {
   cardScale = parseFloat(scale);
   document.documentElement.style.setProperty("--card-scale", cardScale);
+  document.documentElement.style.setProperty("--card-font-scale", cardScale * textScale);
   localStorage.setItem("mishmish-card-scale", cardScale);
 }
 
 function setTextSize(scale) {
   textScale = parseFloat(scale);
   document.documentElement.style.setProperty("--card-text-scale", textScale);
+  document.documentElement.style.setProperty("--card-font-scale", cardScale * textScale);
   localStorage.setItem("mishmish-text-scale", textScale);
 }
 
