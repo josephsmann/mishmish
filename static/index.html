@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mish Mish</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <!-- LOBBY VIEW -->
+  <div id="view-lobby" class="view active">
+    <div class="lobby-container">
+      <h1>Mish Mish</h1>
+      <p class="subtitle">A two-deck rummy card game</p>
+      <div class="name-row">
+        <input id="player-name" type="text" placeholder="Your name" maxlength="20" />
+        <button id="btn-create" onclick="createGame()">Create Game</button>
+      </div>
+      <h2>Open Games</h2>
+      <div id="game-list">
+        <p class="empty-msg">No games available. Create one!</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- WAITING VIEW -->
+  <div id="view-waiting" class="view">
+    <div class="waiting-container">
+      <h1>Mish Mish</h1>
+      <h2>Waiting Room</h2>
+      <p id="waiting-game-id" class="game-id-display"></p>
+      <div id="waiting-players"></div>
+      <p class="waiting-msg">Waiting for players...</p>
+      <button id="btn-start" onclick="startGame()" style="display:none">Start Game</button>
+    </div>
+  </div>
+
+  <!-- GAME VIEW -->
+  <div id="view-game" class="view">
+    <div class="game-layout">
+
+      <div class="top-bar">
+        <div id="players-bar"></div>
+        <div class="draw-pile-info">Draw pile: <span id="draw-pile-count">0</span></div>
+      </div>
+
+      <div id="game-message" class="game-message"></div>
+      <div id="error-msg" class="error-msg" style="display:none"></div>
+
+      <div class="table-section">
+        <h3>Table</h3>
+        <div id="table-area"></div>
+        <div
+          id="new-meld-zone"
+          class="new-meld-zone"
+          ondragover="onDragOver(event)"
+          ondragleave="onDragLeave(event)"
+          ondrop="onDropNewMeld(event)"
+        >Drop here to start a new pile</div>
+      </div>
+
+      <div class="hand-section">
+        <h3>Your Hand</h3>
+        <div id="hand-area"></div>
+      </div>
+
+      <div class="action-bar">
+        <button id="btn-draw" onclick="drawCard()">Draw Card</button>
+        <button id="btn-confirm" onclick="confirmTurn()">Confirm Turn</button>
+        <button id="btn-reset" onclick="resetTurn()">Reset</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ENDED VIEW -->
+  <div id="view-ended" class="view">
+    <div class="ended-container">
+      <h1>Game Over</h1>
+      <div id="ended-message" class="ended-message"></div>
+      <button onclick="backToLobby()">Back to Lobby</button>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
