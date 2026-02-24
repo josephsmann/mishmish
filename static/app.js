@@ -217,7 +217,8 @@ function renderGame() {
   renderHand(canAct, canReorder);
 
   // Buttons
-  document.getElementById("btn-draw").disabled = !canAct;
+  const hasStaged = canAct && stagedHand.length < serverState.your_hand.length;
+  document.getElementById("btn-draw").disabled = !canAct || hasStaged;
   document.getElementById("btn-confirm").disabled = !canAct;
   document.getElementById("btn-reset").disabled = !canAct;
 
