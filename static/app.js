@@ -312,12 +312,9 @@ function onDragStart(e, sourceData) {
   dragSource = sourceData;
   e.dataTransfer.effectAllowed = "move";
   e.dataTransfer.setData("text/plain", JSON.stringify(sourceData));
-  // Apply transparent style after drag image is captured
-  setTimeout(() => e.target.classList.add("dragging"), 0);
 }
 
 function onDragEnd(e) {
-  e.target.classList.remove("dragging");
   // Clean up any drag-over highlights
   document.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over"));
 }

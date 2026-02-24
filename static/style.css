@@ -365,13 +365,6 @@ button:disabled {
   cursor: grabbing;
 }
 
-.card.dragging {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-  color: transparent;
-}
-
 .card.red {
   color: #cc1111;
 }
