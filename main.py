@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Dict
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from lobby import Lobby
@@ -13,7 +13,14 @@ app = FastAPI()
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+@app.get("/static/{filename:path}")
+async def static_files(filename: str):
+    file_path = STATIC_DIR / filename
+    if not file_path.exists():
+        return Response(status_code=404)
+    response = FileResponse(file_path)
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
 
 lobby = Lobby()
 connections: Dict[str, WebSocket] = {}   # player_id -> WebSocket
