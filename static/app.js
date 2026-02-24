@@ -61,11 +61,7 @@ function handleMessage(msg) {
         showView("ended");
         renderEnded();
       } else if (serverState.status === "playing") {
-        if (serverState.your_turn) {
-          resetStaged();
-        } else {
-          syncStaged();
-        }
+        syncStaged();
         showView("game");
         renderGame();
       } else {

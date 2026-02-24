@@ -37,14 +37,8 @@ class Game:
         for player in self.players:
             player['hand'] = [self.draw_pile.pop() for _ in range(9)]
 
-        # Non-dealer (index 1+) gets 1 extra card; first non-dealer is index 1
-        # The non-dealer starts with 10 cards; dealer starts with 9
-        # Player at index 1 (non-dealer) draws extra card
-        non_dealer_idx = 1 % len(self.players)
-        self.players[non_dealer_idx]['hand'].append(self.draw_pile.pop())
-
-        # Non-dealer goes first
-        self.current_player_idx = non_dealer_idx
+        # Non-dealer goes first; their first turn action is to draw or play
+        self.current_player_idx = 1 % len(self.players)
         self.status = "playing"
         return True
 
