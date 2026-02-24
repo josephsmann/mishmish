@@ -447,9 +447,9 @@ function sortTableRuns() {
 function sortHand() {
   const SUIT_ORDER = ['S', 'H', 'D', 'C'];
   stagedHand.sort((a, b) => {
-    const suitDiff = SUIT_ORDER.indexOf(a.suit) - SUIT_ORDER.indexOf(b.suit);
-    if (suitDiff !== 0) return suitDiff;
-    return RANK_ORDER.indexOf(a.rank) - RANK_ORDER.indexOf(b.rank);
+    const rankDiff = RANK_ORDER.indexOf(a.rank) - RANK_ORDER.indexOf(b.rank);
+    if (rankDiff !== 0) return rankDiff;
+    return SUIT_ORDER.indexOf(a.suit) - SUIT_ORDER.indexOf(b.suit);
   });
   renderGame();
 }
