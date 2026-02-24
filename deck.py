@@ -29,8 +29,8 @@ def is_valid_set(cards: List[Card]) -> bool:
     # All same rank
     if not all(c['rank'] == rank for c in cards):
         return False
-    # All different suits (no duplicates)
-    if len(suits) != len(set(suits)):
+    # At least 3 different suits must be represented
+    if len(set(suits)) < 3:
         return False
     return True
 
