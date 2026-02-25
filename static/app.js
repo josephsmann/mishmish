@@ -292,12 +292,13 @@ function renderTable(canAct) {
 
   // Spectators see the live preview from the active player; use committed table as baseline
   const displayTable = (!canAct && previewTable) ? previewTable : stagedTable;
-  const committedKeys = serverState
-    ? serverState.table.flatMap(meld => meld.map(c => c.rank + c.suit))
-    : [];
   const committedCounts = {};
-  committedKeys.forEach(k => { committedCounts[k] = (committedCounts[k] || 0) + 1; });
+  if (serverState) {
+    serverState.table.flatMap(meld => meld.map(c => c.rank + c.suit))
+      .forEach(k => { committedCounts[k] = (committedCounts[k] || 0) + 1; });
+  }
 
+  displayTable.forEach((meld, meldIdx) => {
     const meldEl = document.createElement("div");
     meldEl.className = "meld";
     if (canAct) {
