@@ -14,6 +14,7 @@ let handOverlap = 0;
 let soundEnabled = false;
 let prevYourTurn = false;
 let handSnapshot = [];
+let _pendingHelloId = null; // set while waiting for hello_result from server
 
 // ---- WebSocket ----
 function connect() {
@@ -23,6 +24,7 @@ function connect() {
   ws.onopen = () => {
     const savedId = localStorage.getItem("mishmish-player-id");
     if (savedId) {
+      _pendingHelloId = savedId;
       send({ type: "hello", saved_player_id: savedId });
     }
   };
@@ -51,7 +53,27 @@ function handleMessage(msg) {
   switch (msg.type) {
     case "connected":
       playerId = msg.player_id;
-      localStorage.setItem("mishmish-player-id", playerId);
+      // Don't overwrite localStorage with the temporary new UUID while waiting
+      // for hello_result. If a second disconnection happens in that window, we'd
+      // send hello(new_UUID) which isn't in player_games → session lost.
+      if (!_pendingHelloId) {
+        localStorage.setItem("mishmish-player-id", playerId);
+      }
+      break;
+
+    case "hello_result":
+      if (msg.restored) {
+        playerId = msg.player_id;
+        localStorage.setItem("mishmish-player-id", playerId);
+      } else {
+        // Server couldn't restore session (game ended, server restarted, etc.)
+        // The initial connected message already set playerId to a fresh UUID.
+        // Save that and reset game state so the lobby is shown.
+        localStorage.setItem("mishmish-player-id", playerId);
+        inGame = false;
+        showView("lobby");
+      }
+      _pendingHelloId = null;
       break;
 
     case "lobby_state":

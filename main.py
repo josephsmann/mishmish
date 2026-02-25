@@ -106,11 +106,12 @@ async def websocket_endpoint(ws: WebSocket):
                     connections.pop(player_id, None)
                     pid[0] = saved_id
                     connections[saved_id] = ws
-                    await send(ws, {"type": "connected", "player_id": saved_id})
+                    await send(ws, {"type": "hello_result", "restored": True, "player_id": saved_id})
                     await broadcast_game_state(game_id)
                     if game.status == "waiting":
                         await broadcast_lobby_state()
                 else:
+                    await send(ws, {"type": "hello_result", "restored": False})
                     await send(ws, {"type": "lobby_state", "games": lobby.list_games()})
 
             elif msg_type == "create_game":
