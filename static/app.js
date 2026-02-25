@@ -96,6 +96,7 @@ function handleMessage(msg) {
       prevYourTurn = serverState.your_turn;
       if (serverState.status === "ended") {
         // Keep board visible; overlay the winner banner on top
+        hideAbortConfirm();
         syncStaged();
         showView("game");
         renderGame();
@@ -642,6 +643,19 @@ function hideWinnerOverlay() {
 }
 
 function abortGame() {
+  showAbortConfirm();
+}
+
+function showAbortConfirm() {
+  document.getElementById("abort-confirm").style.display = "flex";
+}
+
+function hideAbortConfirm() {
+  document.getElementById("abort-confirm").style.display = "none";
+}
+
+function confirmAbort() {
+  hideAbortConfirm();
   send({ type: "abort_game" });
 }
 

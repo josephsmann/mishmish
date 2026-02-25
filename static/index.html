@@ -98,6 +98,17 @@
         <button id="btn-sync" onclick="syncState()" title="Resync with server">↺</button>
       </div>
 
+      <!-- Abort confirmation overlay -->
+      <div id="abort-confirm" class="winner-overlay" style="display:none">
+        <div class="winner-box">
+          <div class="winner-message" style="font-size:1.2rem;color:#f0f0f0">Abort the game?<br><span style="font-size:0.9rem;color:#9dbf9d;font-weight:400">All players will return to the lobby.</span></div>
+          <div style="display:flex;gap:12px;justify-content:center;margin-top:4px">
+            <button onclick="confirmAbort()" style="background:#c0392b;color:#fff">Yes, abort</button>
+            <button onclick="hideAbortConfirm()">Cancel</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Winner overlay — shown on top of board when game ends -->
       <div id="winner-overlay" class="winner-overlay" style="display:none">
         <div class="winner-box">
