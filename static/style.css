@@ -311,7 +311,7 @@ button:disabled {
 /* ---- HAND AREA ---- */
 .hand-section {
   background: #1a2e1a;
-  padding: 8px 14px;
+  padding: 8px 14px 8px 20px;
   flex-shrink: 0;
 }
 
