@@ -140,11 +140,12 @@ async def websocket_endpoint(ws: WebSocket):
                     connections.pop(player_id, None)
                     pid[0] = saved_id
                     connections[saved_id] = ws
-                    await send(ws, {"type": "connected", "player_id": saved_id})
+                    await send(ws, {"type": "hello_result", "restored": True, "player_id": saved_id})
                     await broadcast_game_state(game_id)
                     if game.status == "waiting":
                         await broadcast_lobby_state()
                 else:
+                    await send(ws, {"type": "hello_result", "restored": False})
                     await send(ws, {"type": "lobby_state", "games": lobby.list_games()})
 
             elif msg_type == "create_game":
@@ -247,6 +248,43 @@ async def websocket_endpoint(ws: WebSocket):
                     await send(ws, {"type": "error", "message": "Cannot add bot"})
                     continue
                 await broadcast_game_state(game_id)
+                await broadcast_lobby_state()
+
+            elif msg_type == "stage_update":
+                game_id = player_games.get(player_id)
+                if not game_id:
+                    continue
+                game = lobby.get_game(game_id)
+                if game is None:
+                    continue
+                current = game._get_current_player()
+                if current is None or current['id'] != player_id:
+                    continue
+                staged_table = msg.get("table", [])
+                staged_hand_size = msg.get("hand_size")
+                for p in game.players:
+                    if p['id'] == player_id:
+                        continue
+                    ws_p = connections.get(p['id'])
+                    if ws_p:
+                        await send(ws_p, {"type": "table_preview", "table": staged_table, "hand_size": staged_hand_size})
+
+            elif msg_type == "abort_game":
+                game_id = player_games.get(player_id)
+                if not game_id:
+                    await send(ws, {"type": "error", "message": "Not in a game"})
+                    continue
+                game = lobby.get_game(game_id)
+                if game is None or game.status == "ended":
+                    await send(ws, {"type": "error", "message": "No active game to abort"})
+                    continue
+                # Notify all players in the game, then clean up
+                for p in game.players:
+                    ws_p = connections.get(p['id'])
+                    if ws_p:
+                        await send(ws_p, {"type": "game_aborted", "message": "Game was aborted"})
+                    player_games.pop(p['id'], None)
+                lobby.remove_game(game_id)
                 await broadcast_lobby_state()
 
             else:

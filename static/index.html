@@ -34,6 +34,7 @@
       <p class="waiting-msg">Waiting for players...</p>
       <button id="btn-start" onclick="startGame()" style="display:none">Start Game</button>
       <button id="btn-add-bot" onclick="addBot()" style="display:none">Add Bot</button>
+      <button id="btn-abort-waiting" onclick="abortGame()" style="margin-top:12px;background:#607d8b;color:#fff">Abort Game</button>
     </div>
   </div>
 
@@ -94,18 +95,29 @@
         <button id="btn-draw" onclick="drawCard()">Draw Card</button>
         <button id="btn-confirm" onclick="confirmTurn()">Confirm Turn</button>
         <button id="btn-reset" onclick="resetTurn()">Pick up cards</button>
+        <button id="btn-abort" onclick="abortGame()" title="Abort game">Abort</button>
         <button id="btn-sync" onclick="syncState()" title="Resync with server">↺</button>
       </div>
 
-    </div>
-  </div>
+      <!-- Abort confirmation overlay -->
+      <div id="abort-confirm" class="winner-overlay" style="display:none">
+        <div class="winner-box">
+          <div class="winner-message" style="font-size:1.2rem;color:#f0f0f0">Abort the game?<br><span style="font-size:0.9rem;color:#9dbf9d;font-weight:400">All players will return to the lobby.</span></div>
+          <div style="display:flex;gap:12px;justify-content:center;margin-top:4px">
+            <button onclick="confirmAbort()" style="background:#c0392b;color:#fff">Yes, abort</button>
+            <button onclick="hideAbortConfirm()">Cancel</button>
+          </div>
+        </div>
+      </div>
 
-  <!-- ENDED VIEW -->
-  <div id="view-ended" class="view">
-    <div class="ended-container">
-      <h1>Game Over</h1>
-      <div id="ended-message" class="ended-message"></div>
-      <button onclick="backToLobby()">Back to Lobby</button>
+      <!-- Winner overlay — shown on top of board when game ends -->
+      <div id="winner-overlay" class="winner-overlay" style="display:none">
+        <div class="winner-box">
+          <div id="winner-message" class="winner-message"></div>
+          <button onclick="backToLobby()">Back to Lobby</button>
+        </div>
+      </div>
+
     </div>
   </div>
 

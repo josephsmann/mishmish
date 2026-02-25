@@ -14,6 +14,9 @@ let handOverlap = 0;
 let soundEnabled = false;
 let prevYourTurn = false;
 let handSnapshot = [];
+let _pendingHelloId = null; // set while waiting for hello_result from server
+let previewTable = null;   // live staged table broadcast from the current player
+let previewHandSize = null; // live hand size of the current player (from stage_update)
 
 // ---- WebSocket ----
 function connect() {
@@ -23,6 +26,7 @@ function connect() {
   ws.onopen = () => {
     const savedId = localStorage.getItem("mishmish-player-id");
     if (savedId) {
+      _pendingHelloId = savedId;
       send({ type: "hello", saved_player_id: savedId });
     }
   };
@@ -51,7 +55,27 @@ function handleMessage(msg) {
   switch (msg.type) {
     case "connected":
       playerId = msg.player_id;
-      localStorage.setItem("mishmish-player-id", playerId);
+      // Don't overwrite localStorage with the temporary new UUID while waiting
+      // for hello_result. If a second disconnection happens in that window, we'd
+      // send hello(new_UUID) which isn't in player_games → session lost.
+      if (!_pendingHelloId) {
+        localStorage.setItem("mishmish-player-id", playerId);
+      }
+      break;
+
+    case "hello_result":
+      if (msg.restored) {
+        playerId = msg.player_id;
+        localStorage.setItem("mishmish-player-id", playerId);
+      } else {
+        // Server couldn't restore session (game ended, server restarted, etc.)
+        // The initial connected message already set playerId to a fresh UUID.
+        // Save that and reset game state so the lobby is shown.
+        localStorage.setItem("mishmish-player-id", playerId);
+        inGame = false;
+        showView("lobby");
+      }
+      _pendingHelloId = null;
       break;
 
     case "lobby_state":
@@ -66,17 +90,32 @@ function handleMessage(msg) {
       showView("waiting");
       break;
 
+    case "table_preview":
+      previewTable = msg.table;
+      previewHandSize = msg.hand_size ?? null;
+      if (serverState) {
+        renderPlayersBar();
+        renderTable(false);
+      }
+      break;
+
     case "game_state":
+      previewTable = null;
+      previewHandSize = null;
       serverState = msg.state;
       isCreator = serverState.is_creator;
       inGame = true;
       if (serverState.your_turn && !prevYourTurn) playTurnSound();
       prevYourTurn = serverState.your_turn;
       if (serverState.status === "ended") {
-        resetStaged();
-        showView("ended");
-        renderEnded();
+        // Keep board visible; overlay the winner banner on top
+        hideAbortConfirm();
+        syncStaged();
+        showView("game");
+        renderGame();
+        renderWinnerOverlay();
       } else if (serverState.status === "playing") {
+        hideWinnerOverlay();
         syncStaged();
         showView("game");
         renderGame();
@@ -84,6 +123,13 @@ function handleMessage(msg) {
         // waiting
         renderWaiting();
       }
+      break;
+
+    case "game_aborted":
+      inGame = false;
+      serverState = null;
+      showView("lobby");
+      showError(msg.message || "Game was aborted");
       break;
 
     case "error":
@@ -139,12 +185,12 @@ function renderWaiting() {
   document.getElementById("waiting-game-id").textContent = `Game ID: ${serverState.game_id}`;
   const pDiv = document.getElementById("waiting-players");
   pDiv.innerHTML = serverState.players.map(p =>
-    `<div class="waiting-player-chip">${escHtml(p.name)}${p.is_bot ? " \uD83E\uDD16" : ""}</div>`
+    `<div class="waiting-player-chip">${escHtml(p.name)}${p.is_bot ? " 🤖" : ""}</div>`
   ).join("");
   const btnStart = document.getElementById("btn-start");
   btnStart.style.display = isCreator ? "inline-block" : "none";
   const btnAddBot = document.getElementById("btn-add-bot");
-  btnAddBot.style.display = isCreator ? "inline-block" : "none";
+  if (btnAddBot) btnAddBot.style.display = isCreator ? "inline-block" : "none";
 }
 
 function startGame() {
@@ -208,13 +254,7 @@ function syncHandOrder(currentHand, newServerHand) {
 function renderGame() {
   if (!serverState) return;
 
-  // Players bar
-  const bar = document.getElementById("players-bar");
-  bar.innerHTML = serverState.players.map(p =>
-    `<div class="player-chip ${p.is_current ? "current-player" : ""}">
-      ${escHtml(p.name)}${p.is_bot ? " \uD83E\uDD16" : ""} (${p.hand_size})
-    </div>`
-  ).join("");
+  renderPlayersBar();
 
   // Draw pile
   document.getElementById("draw-pile-count").textContent = serverState.draw_pile_size;
@@ -237,7 +277,12 @@ function renderGame() {
   renderHand(canAct, canReorder);
 
   // Buttons
+  const isEnded = serverState.status === "ended";
   const hasStaged = canAct && stagedHand.length < serverState.your_hand.length;
+  document.getElementById("btn-draw").style.display = isEnded ? "none" : "";
+  document.getElementById("btn-confirm").style.display = isEnded ? "none" : "";
+  document.getElementById("btn-reset").style.display = isEnded ? "none" : "";
+  document.getElementById("btn-abort").style.display = isEnded ? "none" : "";
   document.getElementById("btn-draw").disabled = !canAct || hasStaged;
   document.getElementById("btn-confirm").disabled = !canAct;
   document.getElementById("btn-reset").disabled = !canAct;
@@ -247,10 +292,39 @@ function renderGame() {
   document.getElementById("new-meld-zone").style.display = canAct ? "flex" : "none";
 }
 
+function renderPlayersBar() {
+  const bar = document.getElementById("players-bar");
+  bar.innerHTML = serverState.players.map(p => {
+    let count;
+    if (p.is_current) {
+      // Use live staged count when available
+      if (p.id === playerId) {
+        count = stagedHand.length;
+      } else {
+        count = previewHandSize ?? p.hand_size;
+      }
+    } else {
+      count = p.hand_size;
+    }
+    return `<div class="player-chip ${p.is_current ? "current-player" : ""}">
+      ${escHtml(p.name)}${p.is_bot ? " 🤖" : ""} (${count})
+    </div>`;
+  }).join("");
+}
+
 function renderTable(canAct) {
   const area = document.getElementById("table-area");
   area.innerHTML = "";
-  stagedTable.forEach((meld, meldIdx) => {
+
+  // Spectators see the live preview from the active player; use committed table as baseline
+  const displayTable = (!canAct && previewTable) ? previewTable : stagedTable;
+  const committedCounts = {};
+  if (serverState) {
+    serverState.table.flatMap(meld => meld.map(c => c.rank + c.suit))
+      .forEach(k => { committedCounts[k] = (committedCounts[k] || 0) + 1; });
+  }
+
+  displayTable.forEach((meld, meldIdx) => {
     const meldEl = document.createElement("div");
     meldEl.className = "meld";
     if (canAct) {
@@ -259,8 +333,13 @@ function renderTable(canAct) {
       meldEl.addEventListener("dragleave", onDragLeave);
       meldEl.addEventListener("drop", (e) => onDropMeld(e, meldIdx));
     }
+    const seenCounts = {};
     meld.forEach((card, cardIdx) => {
+      const k = card.rank + card.suit;
+      seenCounts[k] = (seenCounts[k] || 0) + 1;
+      const isStaged = seenCounts[k] > (committedCounts[k] || 0);
       const cardEl = makeCardEl(card, canAct, { from: "table", meldIdx, cardIdx });
+      if (isStaged) cardEl.classList.add("staged-card");
       meldEl.appendChild(cardEl);
     });
     if (canAct) {
@@ -390,6 +469,7 @@ function onDropMeld(e, targetMeldIdx) {
   cleanEmptyMelds();
   sortTableRuns();
   dragSource = null;
+  sendStageUpdate();
   renderGame();
 }
 
@@ -406,6 +486,7 @@ function onDropNewMeld(e) {
   cleanEmptyMelds();
   sortTableRuns();
   dragSource = null;
+  sendStageUpdate();
   renderGame();
 }
 
@@ -425,6 +506,12 @@ function removeCardFromSource(source) {
 
 function cleanEmptyMelds() {
   stagedTable = stagedTable.filter(meld => meld.length > 0);
+}
+
+function sendStageUpdate() {
+  if (serverState && serverState.your_turn && serverState.status === "playing") {
+    send({ type: "stage_update", table: stagedTable, hand_size: stagedHand.length });
+  }
 }
 
 // ---- Run sorting ----
@@ -535,26 +622,42 @@ function setHandOverlap(px) {
   localStorage.setItem("mishmish-hand-overlap", handOverlap);
 }
 
+let _audioCtx = null;
+
+function getAudioCtx() {
+  if (!_audioCtx) {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return _audioCtx;
+}
+
 function toggleSound(enabled) {
   soundEnabled = enabled;
   localStorage.setItem("mishmish-sound", enabled ? "1" : "0");
+  if (enabled) {
+    // iOS requires a user gesture to start AudioContext. The checkbox tap counts.
+    try { getAudioCtx().resume(); } catch (e) {}
+  }
 }
 
 function playTurnSound() {
   if (!soundEnabled) return;
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(660, ctx.currentTime);
-    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12);
-    gain.gain.setValueAtTime(0.25, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.5);
+    const ctx = getAudioCtx();
+    // iOS suspends AudioContext when the tab is backgrounded; resume before playing.
+    ctx.resume().then(() => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(660, ctx.currentTime);
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12);
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.5);
+    });
   } catch (e) { /* AudioContext not available */ }
 }
 
@@ -576,17 +679,40 @@ function resetTurn() {
   stagedHand = handSnapshot.map(c => ({ ...c }));
   stagedTable = serverState.table.map(meld => meld.map(c => ({ ...c })));
   sortTableRuns();
+  sendStageUpdate();
   renderGame();
 }
 
 // ---- Ended ----
-function renderEnded() {
-  const msgEl = document.getElementById("ended-message");
+function renderWinnerOverlay() {
+  const msgEl = document.getElementById("winner-message");
   if (serverState && serverState.winner) {
     msgEl.textContent = `${serverState.winner} wins!`;
   } else {
     msgEl.textContent = "It's a draw! The deck ran out.";
   }
+  document.getElementById("winner-overlay").style.display = "flex";
+}
+
+function hideWinnerOverlay() {
+  document.getElementById("winner-overlay").style.display = "none";
+}
+
+function abortGame() {
+  showAbortConfirm();
+}
+
+function showAbortConfirm() {
+  document.getElementById("abort-confirm").style.display = "flex";
+}
+
+function hideAbortConfirm() {
+  document.getElementById("abort-confirm").style.display = "none";
+}
+
+function confirmAbort() {
+  hideAbortConfirm();
+  send({ type: "abort_game" });
 }
 
 function backToLobby() {
