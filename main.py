@@ -208,12 +208,13 @@ async def websocket_endpoint(ws: WebSocket):
                 if current is None or current['id'] != player_id:
                     continue
                 staged_table = msg.get("table", [])
+                staged_hand_size = msg.get("hand_size")
                 for p in game.players:
                     if p['id'] == player_id:
                         continue
                     ws_p = connections.get(p['id'])
                     if ws_p:
-                        await send(ws_p, {"type": "table_preview", "table": staged_table})
+                        await send(ws_p, {"type": "table_preview", "table": staged_table, "hand_size": staged_hand_size})
 
             elif msg_type == "abort_game":
                 game_id = player_games.get(player_id)

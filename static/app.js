@@ -16,6 +16,7 @@ let prevYourTurn = false;
 let handSnapshot = [];
 let _pendingHelloId = null; // set while waiting for hello_result from server
 let previewTable = null;   // live staged table broadcast from the current player
+let previewHandSize = null; // live hand size of the current player (from stage_update)
 
 // ---- WebSocket ----
 function connect() {
@@ -91,11 +92,16 @@ function handleMessage(msg) {
 
     case "table_preview":
       previewTable = msg.table;
-      if (serverState) renderTable(false);
+      previewHandSize = msg.hand_size ?? null;
+      if (serverState) {
+        renderPlayersBar();
+        renderTable(false);
+      }
       break;
 
     case "game_state":
       previewTable = null;
+      previewHandSize = null;
       serverState = msg.state;
       isCreator = serverState.is_creator;
       inGame = true;
@@ -242,13 +248,7 @@ function syncHandOrder(currentHand, newServerHand) {
 function renderGame() {
   if (!serverState) return;
 
-  // Players bar
-  const bar = document.getElementById("players-bar");
-  bar.innerHTML = serverState.players.map(p =>
-    `<div class="player-chip ${p.is_current ? "current-player" : ""}">
-      ${escHtml(p.name)} (${p.hand_size})
-    </div>`
-  ).join("");
+  renderPlayersBar();
 
   // Draw pile
   document.getElementById("draw-pile-count").textContent = serverState.draw_pile_size;
@@ -284,6 +284,26 @@ function renderGame() {
 
   // New meld zone visibility
   document.getElementById("new-meld-zone").style.display = canAct ? "flex" : "none";
+}
+
+function renderPlayersBar() {
+  const bar = document.getElementById("players-bar");
+  bar.innerHTML = serverState.players.map(p => {
+    let count;
+    if (p.is_current) {
+      // Use live staged count when available
+      if (p.id === playerId) {
+        count = stagedHand.length;
+      } else {
+        count = previewHandSize ?? p.hand_size;
+      }
+    } else {
+      count = p.hand_size;
+    }
+    return `<div class="player-chip ${p.is_current ? "current-player" : ""}">
+      ${escHtml(p.name)} (${count})
+    </div>`;
+  }).join("");
 }
 
 function renderTable(canAct) {
@@ -484,7 +504,7 @@ function cleanEmptyMelds() {
 
 function sendStageUpdate() {
   if (serverState && serverState.your_turn && serverState.status === "playing") {
-    send({ type: "stage_update", table: stagedTable });
+    send({ type: "stage_update", table: stagedTable, hand_size: stagedHand.length });
   }
 }
 
