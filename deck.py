@@ -44,6 +44,9 @@ def is_valid_run(cards: List[Card]) -> bool:
         return False
     indices = sorted(RANKS.index(c['rank']) for c in cards)
     n = len(indices)
+    # Runs cannot contain duplicate ranks
+    if len(set(indices)) != n:
+        return False
     # Normal consecutive check
     if indices[-1] - indices[0] == n - 1:
         return True
