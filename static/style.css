@@ -357,6 +357,12 @@ button:disabled {
   cursor: grab;
 }
 
+.card.staged-card {
+  outline: 2px solid #f5c842;
+  outline-offset: -2px;
+  opacity: 0.82;
+}
+
 .card.draggable:hover {
   transform: translateY(-6px);
   box-shadow: 2px 6px 12px rgba(0,0,0,0.4);

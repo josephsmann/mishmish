@@ -197,6 +197,24 @@ async def websocket_endpoint(ws: WebSocket):
                 await broadcast_game_state(game_id)
                 cleanup_ended_game(game_id)
 
+            elif msg_type == "stage_update":
+                game_id = player_games.get(player_id)
+                if not game_id:
+                    continue
+                game = lobby.get_game(game_id)
+                if game is None:
+                    continue
+                current = game._get_current_player()
+                if current is None or current['id'] != player_id:
+                    continue
+                staged_table = msg.get("table", [])
+                for p in game.players:
+                    if p['id'] == player_id:
+                        continue
+                    ws_p = connections.get(p['id'])
+                    if ws_p:
+                        await send(ws_p, {"type": "table_preview", "table": staged_table})
+
             elif msg_type == "abort_game":
                 game_id = player_games.get(player_id)
                 if not game_id:

@@ -15,6 +15,7 @@ let soundEnabled = false;
 let prevYourTurn = false;
 let handSnapshot = [];
 let _pendingHelloId = null; // set while waiting for hello_result from server
+let previewTable = null;   // live staged table broadcast from the current player
 
 // ---- WebSocket ----
 function connect() {
@@ -88,7 +89,13 @@ function handleMessage(msg) {
       showView("waiting");
       break;
 
+    case "table_preview":
+      previewTable = msg.table;
+      if (serverState) renderTable(false);
+      break;
+
     case "game_state":
+      previewTable = null;
       serverState = msg.state;
       isCreator = serverState.is_creator;
       inGame = true;
@@ -282,7 +289,15 @@ function renderGame() {
 function renderTable(canAct) {
   const area = document.getElementById("table-area");
   area.innerHTML = "";
-  stagedTable.forEach((meld, meldIdx) => {
+
+  // Spectators see the live preview from the active player; use committed table as baseline
+  const displayTable = (!canAct && previewTable) ? previewTable : stagedTable;
+  const committedKeys = serverState
+    ? serverState.table.flatMap(meld => meld.map(c => c.rank + c.suit))
+    : [];
+  const committedCounts = {};
+  committedKeys.forEach(k => { committedCounts[k] = (committedCounts[k] || 0) + 1; });
+
     const meldEl = document.createElement("div");
     meldEl.className = "meld";
     if (canAct) {
@@ -291,8 +306,13 @@ function renderTable(canAct) {
       meldEl.addEventListener("dragleave", onDragLeave);
       meldEl.addEventListener("drop", (e) => onDropMeld(e, meldIdx));
     }
+    const seenCounts = {};
     meld.forEach((card, cardIdx) => {
+      const k = card.rank + card.suit;
+      seenCounts[k] = (seenCounts[k] || 0) + 1;
+      const isStaged = seenCounts[k] > (committedCounts[k] || 0);
       const cardEl = makeCardEl(card, canAct, { from: "table", meldIdx, cardIdx });
+      if (isStaged) cardEl.classList.add("staged-card");
       meldEl.appendChild(cardEl);
     });
     if (canAct) {
@@ -422,6 +442,7 @@ function onDropMeld(e, targetMeldIdx) {
   cleanEmptyMelds();
   sortTableRuns();
   dragSource = null;
+  sendStageUpdate();
   renderGame();
 }
 
@@ -438,6 +459,7 @@ function onDropNewMeld(e) {
   cleanEmptyMelds();
   sortTableRuns();
   dragSource = null;
+  sendStageUpdate();
   renderGame();
 }
 
@@ -457,6 +479,12 @@ function removeCardFromSource(source) {
 
 function cleanEmptyMelds() {
   stagedTable = stagedTable.filter(meld => meld.length > 0);
+}
+
+function sendStageUpdate() {
+  if (serverState && serverState.your_turn && serverState.status === "playing") {
+    send({ type: "stage_update", table: stagedTable });
+  }
 }
 
 // ---- Run sorting ----
@@ -624,6 +652,7 @@ function resetTurn() {
   stagedHand = handSnapshot.map(c => ({ ...c }));
   stagedTable = serverState.table.map(meld => meld.map(c => ({ ...c })));
   sortTableRuns();
+  sendStageUpdate();
   renderGame();
 }
 
