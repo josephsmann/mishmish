@@ -197,6 +197,24 @@ async def websocket_endpoint(ws: WebSocket):
                 await broadcast_game_state(game_id)
                 cleanup_ended_game(game_id)
 
+            elif msg_type == "abort_game":
+                game_id = player_games.get(player_id)
+                if not game_id:
+                    await send(ws, {"type": "error", "message": "Not in a game"})
+                    continue
+                game = lobby.get_game(game_id)
+                if game is None or game.status == "ended":
+                    await send(ws, {"type": "error", "message": "No active game to abort"})
+                    continue
+                # Notify all players in the game, then clean up
+                for p in game.players:
+                    ws_p = connections.get(p['id'])
+                    if ws_p:
+                        await send(ws_p, {"type": "game_aborted", "message": "Game was aborted"})
+                    player_games.pop(p['id'], None)
+                lobby.remove_game(game_id)
+                await broadcast_lobby_state()
+
             else:
                 await send(ws, {"type": "error", "message": f"Unknown message type: {msg_type}"})
 

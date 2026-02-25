@@ -179,6 +179,7 @@ button:disabled {
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
+  position: relative;
 }
 
 .top-bar {
@@ -554,16 +555,38 @@ button:disabled {
   background: #78909c;
 }
 
-/* ---- ENDED ---- */
-.ended-container {
-  max-width: 480px;
-  margin: 0 auto;
-  padding: 60px 20px;
-  text-align: center;
+/* ---- WINNER OVERLAY ---- */
+.winner-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
 }
 
-.ended-message {
-  font-size: 1.5rem;
+.winner-box {
+  background: #1a3a1a;
+  border: 2px solid #f5c842;
+  border-radius: 16px;
+  padding: 40px 48px;
+  text-align: center;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+}
+
+.winner-message {
+  font-size: 1.8rem;
+  font-weight: 700;
   color: #f5c842;
-  margin: 24px 0 32px;
+  margin-bottom: 28px;
+}
+
+#btn-abort {
+  background: #607d8b;
+  color: #fff;
+}
+
+#btn-abort:hover:not(:disabled) {
+  background: #78909c;
 }

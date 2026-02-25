@@ -95,10 +95,13 @@ function handleMessage(msg) {
       if (serverState.your_turn && !prevYourTurn) playTurnSound();
       prevYourTurn = serverState.your_turn;
       if (serverState.status === "ended") {
-        resetStaged();
-        showView("ended");
-        renderEnded();
+        // Keep board visible; overlay the winner banner on top
+        syncStaged();
+        showView("game");
+        renderGame();
+        renderWinnerOverlay();
       } else if (serverState.status === "playing") {
+        hideWinnerOverlay();
         syncStaged();
         showView("game");
         renderGame();
@@ -106,6 +109,13 @@ function handleMessage(msg) {
         // waiting
         renderWaiting();
       }
+      break;
+
+    case "game_aborted":
+      inGame = false;
+      serverState = null;
+      showView("lobby");
+      showError(msg.message || "Game was aborted");
       break;
 
     case "error":
@@ -253,7 +263,12 @@ function renderGame() {
   renderHand(canAct, canReorder);
 
   // Buttons
+  const isEnded = serverState.status === "ended";
   const hasStaged = canAct && stagedHand.length < serverState.your_hand.length;
+  document.getElementById("btn-draw").style.display = isEnded ? "none" : "";
+  document.getElementById("btn-confirm").style.display = isEnded ? "none" : "";
+  document.getElementById("btn-reset").style.display = isEnded ? "none" : "";
+  document.getElementById("btn-abort").style.display = isEnded ? "none" : "";
   document.getElementById("btn-draw").disabled = !canAct || hasStaged;
   document.getElementById("btn-confirm").disabled = !canAct;
   document.getElementById("btn-reset").disabled = !canAct;
@@ -612,13 +627,22 @@ function resetTurn() {
 }
 
 // ---- Ended ----
-function renderEnded() {
-  const msgEl = document.getElementById("ended-message");
+function renderWinnerOverlay() {
+  const msgEl = document.getElementById("winner-message");
   if (serverState && serverState.winner) {
     msgEl.textContent = `${serverState.winner} wins!`;
   } else {
     msgEl.textContent = "It's a draw! The deck ran out.";
   }
+  document.getElementById("winner-overlay").style.display = "flex";
+}
+
+function hideWinnerOverlay() {
+  document.getElementById("winner-overlay").style.display = "none";
+}
+
+function abortGame() {
+  send({ type: "abort_game" });
 }
 
 function backToLobby() {
