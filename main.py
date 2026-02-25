@@ -1,3 +1,4 @@
+import asyncio
 import json
 import uuid
 from pathlib import Path
@@ -7,6 +8,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from bot import find_best_play
 from lobby import Lobby
 
 app = FastAPI()
@@ -72,6 +74,38 @@ def cleanup_ended_game(game_id: str):
         for p in game.players:
             player_games.pop(p['id'], None)
         lobby.remove_game(game_id)
+
+
+async def trigger_bot_if_needed(game_id: str):
+    game = lobby.get_game(game_id)
+    if game is None or game.status != "playing":
+        return
+    current = game._get_current_player()
+    if current is None or not current.get('is_bot'):
+        return
+
+    bot_id = current['id']
+    await asyncio.sleep(0.8)
+
+    # Re-check after sleep
+    game = lobby.get_game(game_id)
+    if game is None or game.status != "playing":
+        return
+    current = game._get_current_player()
+    if current is None or current['id'] != bot_id:
+        return
+
+    new_table = find_best_play(current['hand'], game.table)
+    if new_table is None:
+        game.draw_card(bot_id)
+    else:
+        ok, _ = game.play_turn(bot_id, new_table)
+        if not ok:
+            game.draw_card(bot_id)
+
+    await broadcast_game_state(game_id)
+    cleanup_ended_game(game_id)
+    await trigger_bot_if_needed(game_id)
 
 
 async def broadcast_lobby_state():
@@ -164,6 +198,7 @@ async def websocket_endpoint(ws: WebSocket):
                     continue
                 await broadcast_game_state(game_id)
                 await broadcast_lobby_state()
+                await trigger_bot_if_needed(game_id)
 
             elif msg_type == "draw_card":
                 game_id = player_games.get(player_id)
@@ -179,6 +214,7 @@ async def websocket_endpoint(ws: WebSocket):
                     continue
                 await broadcast_game_state(game_id)
                 cleanup_ended_game(game_id)
+                await trigger_bot_if_needed(game_id)
 
             elif msg_type == "play_turn":
                 game_id = player_games.get(player_id)
@@ -195,6 +231,23 @@ async def websocket_endpoint(ws: WebSocket):
                     continue
                 await broadcast_game_state(game_id)
                 cleanup_ended_game(game_id)
+                await trigger_bot_if_needed(game_id)
+
+            elif msg_type == "add_bot":
+                game_id = player_games.get(player_id)
+                if not game_id:
+                    await send(ws, {"type": "error", "message": "Not in a game"})
+                    continue
+                game = lobby.get_game(game_id)
+                if game is None or game.creator_id != player_id:
+                    await send(ws, {"type": "error", "message": "Only the creator can add a bot"})
+                    continue
+                bot_id = game.add_bot()
+                if bot_id is None:
+                    await send(ws, {"type": "error", "message": "Cannot add bot"})
+                    continue
+                await broadcast_game_state(game_id)
+                await broadcast_lobby_state()
 
             else:
                 await send(ws, {"type": "error", "message": f"Unknown message type: {msg_type}"})

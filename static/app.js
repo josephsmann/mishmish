@@ -139,14 +139,20 @@ function renderWaiting() {
   document.getElementById("waiting-game-id").textContent = `Game ID: ${serverState.game_id}`;
   const pDiv = document.getElementById("waiting-players");
   pDiv.innerHTML = serverState.players.map(p =>
-    `<div class="waiting-player-chip">${escHtml(p.name)}</div>`
+    `<div class="waiting-player-chip">${escHtml(p.name)}${p.is_bot ? " \uD83E\uDD16" : ""}</div>`
   ).join("");
   const btnStart = document.getElementById("btn-start");
   btnStart.style.display = isCreator ? "inline-block" : "none";
+  const btnAddBot = document.getElementById("btn-add-bot");
+  btnAddBot.style.display = isCreator ? "inline-block" : "none";
 }
 
 function startGame() {
   send({ type: "start_game" });
+}
+
+function addBot() {
+  send({ type: "add_bot" });
 }
 
 // ---- Game ----
@@ -206,7 +212,7 @@ function renderGame() {
   const bar = document.getElementById("players-bar");
   bar.innerHTML = serverState.players.map(p =>
     `<div class="player-chip ${p.is_current ? "current-player" : ""}">
-      ${escHtml(p.name)} (${p.hand_size})
+      ${escHtml(p.name)}${p.is_bot ? " \uD83E\uDD16" : ""} (${p.hand_size})
     </div>`
   ).join("");
 

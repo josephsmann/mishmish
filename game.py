@@ -16,13 +16,20 @@ class Game:
         self.status: str = "waiting"
         self.winner: Optional[str] = None
 
-    def add_player(self, player_id: str, name: str) -> bool:
+    def add_player(self, player_id: str, name: str, is_bot: bool = False) -> bool:
         if self.status != "waiting":
             return False
         if any(p['id'] == player_id for p in self.players):
             return False
-        self.players.append({"id": player_id, "name": name, "hand": []})
+        self.players.append({"id": player_id, "name": name, "hand": [], "is_bot": is_bot})
         return True
+
+    def add_bot(self) -> Optional[str]:
+        bot_id = "bot_" + uuid.uuid4().hex[:8]
+        name = "Mish Bot"
+        if not self.add_player(bot_id, name, is_bot=True):
+            return None
+        return bot_id
 
     def start(self, requestor_id: str) -> bool:
         if requestor_id != self.creator_id:
@@ -124,6 +131,7 @@ class Game:
                     "name": p['name'],
                     "hand_size": len(p['hand']),
                     "is_current": p['id'] == (current['id'] if current else None),
+                    "is_bot": p.get('is_bot', False),
                 }
                 for p in self.players
             ],
