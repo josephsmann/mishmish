@@ -247,6 +247,12 @@ button:disabled {
   background: #2d5a27;
   padding: 10px 14px;
   border-bottom: 2px solid #1a3a1a;
+  transition: background 0.4s, border-bottom-color 0.4s;
+}
+
+.table-section.your-turn {
+  background: #5a2020;
+  border-bottom-color: #3a1a1a;
 }
 
 #table-area {

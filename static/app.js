@@ -270,6 +270,9 @@ function renderGame() {
   const canAct = serverState.your_turn && serverState.status === "playing";
   const canReorder = serverState.status === "playing";
 
+  // Table turns red on your turn as a visual cue
+  document.querySelector('.table-section').classList.toggle('your-turn', !!canAct);
+
   // Render table
   renderTable(canAct);
 
@@ -631,11 +634,19 @@ function getAudioCtx() {
   return _audioCtx;
 }
 
+// iOS suspends AudioContext whenever the tab backgrounds. Re-prime it on every
+// user touch so it's ready when the bell needs to fire from a WS message.
+document.addEventListener('touchstart', () => {
+  if (_audioCtx && _audioCtx.state === 'suspended') {
+    _audioCtx.resume();
+  }
+}, { passive: true });
+
 function toggleSound(enabled) {
   soundEnabled = enabled;
   localStorage.setItem("mishmish-sound", enabled ? "1" : "0");
   if (enabled) {
-    // iOS requires a user gesture to start AudioContext. The checkbox tap counts.
+    // Checkbox tap is a user gesture — create and prime the AudioContext now.
     try { getAudioCtx().resume(); } catch (e) {}
   }
 }
