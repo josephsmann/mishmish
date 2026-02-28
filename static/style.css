@@ -430,6 +430,147 @@ button:disabled {
   font-size: calc(1.5rem * var(--card-font-scale));
 }
 
+/* ---- MOBILE / SMALL SCREEN ---- */
+@media (max-width: 480px) {
+  /* Compact card: rank centered top half, suit centered bottom half */
+  .card {
+    width: 38px;
+    height: 52px;
+    border-radius: 5px;
+  }
+
+  .card-rank-top {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    text-align: center;
+    transform: translateY(-100%);
+    font-size: 0.95rem;
+    font-weight: 800;
+  }
+
+  .card-suit-top {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    text-align: center;
+    transform: translateY(5%);
+    font-size: 0.85rem;
+  }
+
+  .card-rank-bot,
+  .card-suit-bot,
+  .card-center {
+    display: none;
+  }
+
+  /* Adjust meld/new-meld-zone sizing to match compact cards */
+  .meld {
+    min-width: 38px;
+    min-height: 52px;
+    padding: 4px 6px;
+  }
+
+  .meld .card {
+    margin-left: -6px;
+  }
+
+  .new-meld-zone {
+    min-width: 38px;
+    min-height: 52px;
+    font-size: 0.7rem;
+    padding: 4px;
+  }
+
+  #hand-area {
+    min-height: 52px;
+  }
+
+  .card-drop-slot {
+    width: 10px;
+    height: 52px;
+  }
+
+  /* Top bar: wrap player chips */
+  .top-bar {
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px 10px;
+  }
+
+  #players-bar {
+    gap: 6px;
+  }
+
+  .player-chip {
+    font-size: 0.75rem;
+    padding: 3px 10px;
+  }
+
+  .draw-pile-info {
+    font-size: 0.75rem;
+  }
+
+  /* Settings: single scrollable row, no wrapping */
+  .settings-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 10px;
+    font-size: 0.7rem;
+    padding-bottom: 2px;
+  }
+
+  .settings-row input[type="range"] {
+    width: 60px;
+  }
+
+  /* Action bar: tighter buttons */
+  .action-bar {
+    gap: 5px;
+    padding: 6px 8px;
+  }
+
+  .action-bar button {
+    font-size: 0.75rem;
+    padding: 8px 6px;
+  }
+
+  /* Game message / error */
+  .game-message {
+    font-size: 0.85rem;
+    padding: 4px 10px;
+  }
+
+  .error-msg {
+    font-size: 0.8rem;
+    padding: 4px 10px;
+  }
+
+  /* Hand section padding */
+  .hand-section {
+    padding: 6px 8px 6px 14px;
+  }
+
+  .table-section {
+    padding: 8px 10px;
+  }
+
+  /* Shorten action button labels */
+  #btn-draw { font-size: 0; }
+  #btn-draw::after { content: "Draw"; font-size: 0.75rem; }
+
+  #btn-confirm { font-size: 0; }
+  #btn-confirm::after { content: "Confirm"; font-size: 0.75rem; }
+
+  #btn-reset { font-size: 0; }
+  #btn-reset::after { content: "Pick up"; font-size: 0.75rem; }
+
+  #btn-abort { font-size: 0; }
+  #btn-abort::after { content: "Abort"; font-size: 0.75rem; }
+}
+
 /* ---- SETTINGS ROW ---- */
 .settings-row {
   display: flex;
