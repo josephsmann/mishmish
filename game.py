@@ -1,5 +1,6 @@
 import uuid
 from collections import Counter
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from deck import Card, card_key, is_valid_meld, make_deck
@@ -15,6 +16,38 @@ class Game:
         self.current_player_idx: int = 0
         self.status: str = "waiting"
         self.winner: Optional[str] = None
+        self.winner_id: Optional[str] = None
+        self.started_at: Optional[str] = None
+        self.ended_at: Optional[str] = None
+
+    def to_dict(self) -> Dict:
+        return {
+            "game_id": self.game_id,
+            "creator_id": self.creator_id,
+            "players": self.players,
+            "table": self.table,
+            "draw_pile": self.draw_pile,
+            "current_player_idx": self.current_player_idx,
+            "status": self.status,
+            "winner": self.winner,
+            "winner_id": self.winner_id,
+            "started_at": self.started_at,
+            "ended_at": self.ended_at,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict) -> "Game":
+        g = cls(game_id=d["game_id"], creator_id=d["creator_id"])
+        g.players = d["players"]
+        g.table = d["table"]
+        g.draw_pile = d["draw_pile"]
+        g.current_player_idx = d["current_player_idx"]
+        g.status = d["status"]
+        g.winner = d.get("winner")
+        g.winner_id = d.get("winner_id")
+        g.started_at = d.get("started_at")
+        g.ended_at = d.get("ended_at")
+        return g
 
     def add_player(self, player_id: str, name: str, is_bot: bool = False) -> bool:
         if self.status != "waiting":
@@ -47,6 +80,7 @@ class Game:
         # Non-dealer goes first; their first turn action is to draw or play
         self.current_player_idx = 1 % len(self.players)
         self.status = "playing"
+        self.started_at = datetime.now(timezone.utc).isoformat()
         return True
 
     def draw_card(self, player_id: str) -> Optional[Card]:
@@ -57,6 +91,8 @@ class Game:
             # Deck exhausted - game is a draw
             self.status = "ended"
             self.winner = None
+            self.winner_id = None
+            self.ended_at = datetime.now(timezone.utc).isoformat()
             return None
         card = self.draw_pile.pop()
         player['hand'].append(card)
@@ -112,6 +148,8 @@ class Game:
         if not player['hand']:
             self.status = "ended"
             self.winner = player['name']
+            self.winner_id = player['id']
+            self.ended_at = datetime.now(timezone.utc).isoformat()
             return True, "win"
 
         self._advance_turn()

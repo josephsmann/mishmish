@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from bot import find_best_play
 from lobby import Lobby
 import auth
+import db
 
 app = FastAPI()
 
@@ -20,6 +21,12 @@ STATIC_DIR = Path(__file__).parent / "static"
 @app.on_event("startup")
 async def startup():
     await auth.init_db()
+    await db.init_game_tables()
+    # Restore in-progress games that survived a machine restart
+    for game in await db.load_active_games():
+        lobby.games[game.game_id] = game
+        for p in game.players:
+            player_games[p["id"]] = game.game_id
 
 
 @app.get("/static/{filename:path}")
@@ -124,6 +131,28 @@ async def forgot_password(request: Request):
     return _json_ok({"message": "If that number is registered, a reset link has been sent."})
 
 
+@app.get("/history/games")
+async def history_games(limit: int = 20, offset: int = 0):
+    limit = min(limit, 100)
+    games = await db.get_recent_games(limit=limit, offset=offset)
+    return _json_ok({"games": games})
+
+
+@app.get("/history/games/{game_id}")
+async def history_game_detail(game_id: str):
+    game = await db.get_game_detail(game_id)
+    if game is None:
+        return _json_error("Game not found", status=404)
+    return _json_ok({"game": game})
+
+
+@app.get("/history/players/{player_id}/games")
+async def history_player_games(player_id: str, limit: int = 20, offset: int = 0):
+    limit = min(limit, 100)
+    games = await db.get_games_for_player(player_id=player_id, limit=limit, offset=offset)
+    return _json_ok({"games": games})
+
+
 @app.get("/reset-password")
 async def reset_password_page(token: str = ""):
     """Serve the SPA; the frontend handles the token from the query string."""
@@ -161,6 +190,9 @@ async def broadcast_game_state(game_id: str):
     game = lobby.get_game(game_id)
     if game is None:
         return
+    # Persist state on every change so a restart can resume in-progress games
+    if game.status in ("waiting", "playing"):
+        await db.save_active_game(game)
     for player in game.players:
         pid = player['id']
         ws = connections.get(pid)
@@ -187,11 +219,13 @@ async def leave_waiting_game(player_id: str):
         await broadcast_game_state(old_game_id)
 
 
-def cleanup_ended_game(game_id: str):
+async def cleanup_ended_game(game_id: str):
     game = lobby.get_game(game_id)
     if game and game.status == "ended":
         for p in game.players:
             player_games.pop(p['id'], None)
+        await db.record_game_end(game, "ended")
+        await db.delete_active_game(game_id)
         lobby.remove_game(game_id)
 
 
@@ -223,7 +257,7 @@ async def trigger_bot_if_needed(game_id: str):
             game.draw_card(bot_id)
 
     await broadcast_game_state(game_id)
-    cleanup_ended_game(game_id)
+    await cleanup_ended_game(game_id)
     await trigger_bot_if_needed(game_id)
 
 
@@ -371,7 +405,7 @@ async def websocket_endpoint(ws: WebSocket):
                     await send(ws, {"type": "error", "message": "Not your turn or empty deck"})
                     continue
                 await broadcast_game_state(game_id)
-                cleanup_ended_game(game_id)
+                await cleanup_ended_game(game_id)
                 await trigger_bot_if_needed(game_id)
 
             elif msg_type == "play_turn":
@@ -388,7 +422,7 @@ async def websocket_endpoint(ws: WebSocket):
                     await send(ws, {"type": "error", "message": reason})
                     continue
                 await broadcast_game_state(game_id)
-                cleanup_ended_game(game_id)
+                await cleanup_ended_game(game_id)
                 await trigger_bot_if_needed(game_id)
 
             elif msg_type == "add_bot":
@@ -441,6 +475,8 @@ async def websocket_endpoint(ws: WebSocket):
                     if ws_p:
                         await send(ws_p, {"type": "game_aborted", "message": "Game was aborted"})
                     player_games.pop(p['id'], None)
+                await db.record_game_end(game, "aborted")
+                await db.delete_active_game(game_id)
                 lobby.remove_game(game_id)
                 await broadcast_lobby_state()
 
