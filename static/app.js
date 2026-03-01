@@ -18,16 +18,25 @@ let _pendingHelloId = null; // set while waiting for hello_result from server
 let previewTable = null;   // live staged table broadcast from the current player
 let previewHandSize = null; // live hand size of the current player (from stage_update)
 
+// ---- Auth state ----
+let authToken = localStorage.getItem("mishmish-auth-token") || null;
+let authUsername = localStorage.getItem("mishmish-username") || null;
+
 // ---- WebSocket ----
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
 
   ws.onopen = () => {
-    const savedId = localStorage.getItem("mishmish-player-id");
-    if (savedId) {
-      _pendingHelloId = savedId;
-      send({ type: "hello", saved_player_id: savedId });
+    if (authToken) {
+      // Registered player: authenticate via JWT
+      send({ type: "hello", auth_token: authToken });
+    } else {
+      const savedId = localStorage.getItem("mishmish-player-id");
+      if (savedId) {
+        _pendingHelloId = savedId;
+        send({ type: "hello", saved_player_id: savedId });
+      }
     }
   };
 
@@ -58,22 +67,29 @@ function handleMessage(msg) {
       // Don't overwrite localStorage with the temporary new UUID while waiting
       // for hello_result. If a second disconnection happens in that window, we'd
       // send hello(new_UUID) which isn't in player_games → session lost.
-      if (!_pendingHelloId) {
+      if (!_pendingHelloId && !authToken) {
         localStorage.setItem("mishmish-player-id", playerId);
       }
       break;
 
     case "hello_result":
+      if (msg.username) {
+        // Registered player authenticated via JWT
+        authUsername = msg.username;
+        playerId = msg.player_id;
+      }
       if (msg.restored) {
         playerId = msg.player_id;
-        localStorage.setItem("mishmish-player-id", playerId);
+        if (!authToken) localStorage.setItem("mishmish-player-id", playerId);
       } else {
-        // Server couldn't restore session (game ended, server restarted, etc.)
-        // The initial connected message already set playerId to a fresh UUID.
-        // Save that and reset game state so the lobby is shown.
-        localStorage.setItem("mishmish-player-id", playerId);
+        if (!authToken) localStorage.setItem("mishmish-player-id", playerId);
         inGame = false;
-        showView("lobby");
+        if (authToken) {
+          renderIdentityBar();
+          showView("lobby");
+        } else {
+          showView("auth");
+        }
       }
       _pendingHelloId = null;
       break;
@@ -81,6 +97,7 @@ function handleMessage(msg) {
     case "lobby_state":
       if (!inGame) {
         renderLobby(msg.games);
+        renderIdentityBar();
       }
       break;
 
@@ -128,7 +145,12 @@ function handleMessage(msg) {
     case "game_aborted":
       inGame = false;
       serverState = null;
-      showView("lobby");
+      if (authToken) {
+        renderIdentityBar();
+        showView("lobby");
+      } else {
+        showView("lobby");
+      }
       showError(msg.message || "Game was aborted");
       break;
 
@@ -142,6 +164,159 @@ function handleMessage(msg) {
 function showView(name) {
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
   document.getElementById(`view-${name}`).classList.add("active");
+}
+
+// ---- Auth UI ----
+function switchAuthTab(tab) {
+  ["login", "register", "guest", "forgot"].forEach(t => {
+    document.getElementById(`auth-${t}`).style.display = t === tab ? "flex" : "none";
+    const tabBtn = document.getElementById(`tab-${t}`);
+    if (tabBtn) tabBtn.classList.toggle("active", t === tab);
+  });
+}
+
+async function doLogin() {
+  const username = document.getElementById("login-username").value.trim();
+  const password = document.getElementById("login-password").value;
+  const errEl = document.getElementById("login-error");
+  errEl.textContent = "";
+  if (!username || !password) { errEl.textContent = "Fill in all fields"; return; }
+  try {
+    const res = await fetch("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json();
+    if (!data.ok) { errEl.textContent = data.error; return; }
+    setAuth(data.token, data.username);
+    // Reconnect WS so hello fires with the new token
+    if (ws) ws.close();
+  } catch (e) {
+    errEl.textContent = "Network error, try again";
+  }
+}
+
+async function doRegister() {
+  const username = document.getElementById("reg-username").value.trim();
+  const password = document.getElementById("reg-password").value;
+  const phone = document.getElementById("reg-phone").value.trim();
+  const errEl = document.getElementById("reg-error");
+  errEl.textContent = "";
+  if (!username || !password) { errEl.textContent = "Fill in all fields"; return; }
+  try {
+    const res = await fetch("/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password, phone }),
+    });
+    const data = await res.json();
+    if (!data.ok) { errEl.textContent = data.error; return; }
+    setAuth(data.token, data.username);
+    if (ws) ws.close();
+  } catch (e) {
+    errEl.textContent = "Network error, try again";
+  }
+}
+
+function doGuest() {
+  const name = document.getElementById("guest-name").value.trim();
+  const errEl = document.getElementById("guest-error");
+  if (!name) { errEl.textContent = "Enter a display name"; return; }
+  playerName = name;
+  showView("lobby");
+  renderIdentityBar();
+}
+
+async function doForgot() {
+  const phone = document.getElementById("forgot-phone").value.trim();
+  const errEl = document.getElementById("forgot-error");
+  const succEl = document.getElementById("forgot-success");
+  errEl.textContent = "";
+  succEl.style.display = "none";
+  if (!phone) { errEl.textContent = "Enter your phone number"; return; }
+  try {
+    const res = await fetch("/auth/forgot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone }),
+    });
+    const data = await res.json();
+    if (!data.ok) { errEl.textContent = data.error; return; }
+    succEl.textContent = data.message;
+    succEl.style.display = "block";
+  } catch (e) {
+    errEl.textContent = "Network error, try again";
+  }
+}
+
+async function doResetPassword() {
+  const pw1 = document.getElementById("reset-password").value;
+  const pw2 = document.getElementById("reset-password2").value;
+  const errEl = document.getElementById("reset-error");
+  const succEl = document.getElementById("reset-success");
+  errEl.textContent = "";
+  succEl.style.display = "none";
+  if (!pw1) { errEl.textContent = "Enter a new password"; return; }
+  if (pw1 !== pw2) { errEl.textContent = "Passwords don't match"; return; }
+  const token = new URLSearchParams(location.search).get("token") || "";
+  if (!token) { errEl.textContent = "Invalid reset link"; return; }
+  try {
+    const res = await fetch("/auth/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, password: pw1 }),
+    });
+    const data = await res.json();
+    if (!data.ok) { errEl.textContent = data.error; return; }
+    setAuth(data.token, data.username);
+    succEl.textContent = "Password updated! Taking you to the lobby…";
+    succEl.style.display = "block";
+    document.getElementById("btn-reset-submit").disabled = true;
+    setTimeout(() => {
+      history.replaceState(null, "", "/");
+      if (ws) ws.close(); else showView("lobby");
+    }, 1500);
+  } catch (e) {
+    errEl.textContent = "Network error, try again";
+  }
+}
+
+function setAuth(token, username) {
+  authToken = token;
+  authUsername = username;
+  localStorage.setItem("mishmish-auth-token", token);
+  localStorage.setItem("mishmish-username", username);
+  playerName = username;
+}
+
+function signOut() {
+  authToken = null;
+  authUsername = null;
+  localStorage.removeItem("mishmish-auth-token");
+  localStorage.removeItem("mishmish-username");
+  localStorage.removeItem("mishmish-player-id");
+  inGame = false;
+  serverState = null;
+  playerName = "";
+  showView("auth");
+  switchAuthTab("login");
+  if (ws) ws.close();
+}
+
+function renderIdentityBar() {
+  const label = document.getElementById("identity-label");
+  const btn = document.getElementById("btn-sign-out");
+  if (authUsername) {
+    label.textContent = `Signed in as ${authUsername}`;
+    btn.style.display = "inline-block";
+  } else if (playerName) {
+    label.textContent = `Playing as ${playerName} (guest)`;
+    btn.style.display = "none";
+  } else {
+    label.textContent = "";
+    btn.style.display = "none";
+  }
 }
 
 // ---- Lobby ----
@@ -166,17 +341,13 @@ function renderLobby(games) {
 }
 
 function createGame() {
-  const name = document.getElementById("player-name").value.trim();
-  if (!name) { showError("Enter your name first"); return; }
-  playerName = name;
-  send({ type: "create_game", name });
+  if (!playerName) { showError("No player name set"); return; }
+  send({ type: "create_game", name: playerName });
 }
 
 function joinGame(gameId) {
-  const name = document.getElementById("player-name").value.trim();
-  if (!name) { showError("Enter your name first"); return; }
-  playerName = name;
-  send({ type: "join_game", game_id: gameId, name });
+  if (!playerName) { showError("No player name set"); return; }
+  send({ type: "join_game", game_id: gameId, name: playerName });
 }
 
 // ---- Waiting ----
@@ -727,8 +898,10 @@ function confirmAbort() {
 }
 
 function backToLobby() {
-  localStorage.removeItem("mishmish-player-id");
-  location.reload();
+  inGame = false;
+  serverState = null;
+  renderIdentityBar();
+  showView("lobby");
 }
 
 // ---- Error ----
@@ -783,6 +956,20 @@ function escHtml(str) {
     const el = document.getElementById("sound-toggle");
     if (el) el.checked = true;
   }
-})();
 
-connect();
+  // If the URL has a reset token, show the reset-password view immediately
+  const resetToken = new URLSearchParams(location.search).get("token");
+  if (resetToken) {
+    showView("reset");
+    return; // Don't connect WS yet; user needs to set a new password first
+  }
+
+  // If the user already has a JWT, skip the auth screen
+  if (authToken) {
+    playerName = authUsername || "";
+    renderIdentityBar();
+    showView("lobby");
+  }
+
+  connect();
+})();

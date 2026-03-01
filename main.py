@@ -4,16 +4,23 @@ import uuid
 from pathlib import Path
 from typing import Dict
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, Response
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import FileResponse, Response, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from bot import find_best_play
 from lobby import Lobby
+import auth
 
 app = FastAPI()
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+@app.on_event("startup")
+async def startup():
+    await auth.init_db()
+
 
 @app.get("/static/{filename:path}")
 async def static_files(filename: str):
@@ -24,6 +31,7 @@ async def static_files(filename: str):
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return response
 
+
 lobby = Lobby()
 connections: Dict[str, WebSocket] = {}   # player_id -> WebSocket
 player_games: Dict[str, str] = {}        # player_id -> game_id
@@ -33,6 +41,109 @@ player_games: Dict[str, str] = {}        # player_id -> game_id
 async def index():
     return FileResponse(STATIC_DIR / "index.html")
 
+
+# ---------------------------------------------------------------------------
+# Auth HTTP endpoints
+# ---------------------------------------------------------------------------
+
+def _json_error(message: str, status: int = 400):
+    return JSONResponse({"ok": False, "error": message}, status_code=status)
+
+
+def _json_ok(data: dict):
+    return JSONResponse({"ok": True, **data})
+
+
+@app.post("/auth/register")
+async def register(request: Request):
+    body = await request.json()
+    username = (body.get("username") or "").strip()
+    password = body.get("password") or ""
+    phone_raw = (body.get("phone") or "").strip()
+
+    if not username or len(username) < 2:
+        return _json_error("Username must be at least 2 characters")
+    if len(username) > 20:
+        return _json_error("Username must be at most 20 characters")
+    if len(password) < 6:
+        return _json_error("Password must be at least 6 characters")
+
+    phone = auth.normalize_phone(phone_raw) if phone_raw else None
+
+    try:
+        user = await auth.create_user(username, password, phone)
+    except ValueError as e:
+        return _json_error(str(e))
+
+    token = auth.create_token(user["id"], user["username"])
+    return _json_ok({"token": token, "username": user["username"], "player_id": user["id"]})
+
+
+@app.post("/auth/login")
+async def login(request: Request):
+    body = await request.json()
+    username = (body.get("username") or "").strip()
+    password = body.get("password") or ""
+
+    user = await auth.verify_password(username, password)
+    if user is None:
+        return _json_error("Invalid username or password", status=401)
+
+    token = auth.create_token(user["id"], user["username"])
+    return _json_ok({"token": token, "username": user["username"], "player_id": user["id"]})
+
+
+@app.post("/auth/forgot")
+async def forgot_password(request: Request):
+    body = await request.json()
+    phone_raw = (body.get("phone") or "").strip()
+    if not phone_raw:
+        return _json_error("Phone number is required")
+
+    phone = auth.normalize_phone(phone_raw)
+    user = await auth.get_user_by_phone(phone)
+
+    # Always return success to avoid leaking whether a phone exists
+    if user:
+        reset_token = await auth.create_reset_token(user["id"])
+        try:
+            await auth.send_reset_sms(phone, reset_token)
+        except Exception as e:
+            # Don't expose internal errors
+            import logging
+            logging.warning(f"SMS send failed: {e}")
+
+    return _json_ok({"message": "If that number is registered, a reset link has been sent."})
+
+
+@app.get("/reset-password")
+async def reset_password_page(token: str = ""):
+    """Serve the SPA; the frontend handles the token from the query string."""
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.post("/auth/reset")
+async def reset_password(request: Request):
+    body = await request.json()
+    token = (body.get("token") or "").strip()
+    new_password = body.get("password") or ""
+
+    if len(new_password) < 6:
+        return _json_error("Password must be at least 6 characters")
+
+    user_id = await auth.consume_reset_token(token)
+    if user_id is None:
+        return _json_error("Reset link is invalid or has expired", status=400)
+
+    await auth.update_password(user_id, new_password)
+    user = await auth.get_user_by_id(user_id)
+    new_jwt = auth.create_token(user_id, user["username"])
+    return _json_ok({"token": new_jwt, "username": user["username"], "player_id": user_id})
+
+
+# ---------------------------------------------------------------------------
+# WebSocket helpers
+# ---------------------------------------------------------------------------
 
 async def send(ws: WebSocket, msg: dict):
     await ws.send_text(json.dumps(msg))
@@ -115,6 +226,10 @@ async def broadcast_lobby_state():
             await send(ws, {"type": "lobby_state", "games": games})
 
 
+# ---------------------------------------------------------------------------
+# WebSocket endpoint
+# ---------------------------------------------------------------------------
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
@@ -132,7 +247,41 @@ async def websocket_endpoint(ws: WebSocket):
             player_id = pid[0]
 
             if msg_type == "hello":
-                # Reconnect: restore previous session only if game is still in progress
+                # --- JWT-authenticated session (registered players) ---
+                auth_token = msg.get("auth_token", "")
+                if auth_token:
+                    payload = auth.decode_token(auth_token)
+                    if payload:
+                        account_id = payload["sub"]
+                        username = payload["username"]
+                        # Switch the connection to the persistent account id
+                        connections.pop(player_id, None)
+                        pid[0] = account_id
+                        connections[account_id] = ws
+                        # Restore in-progress game if any
+                        game_id = player_games.get(account_id)
+                        game = lobby.get_game(game_id) if game_id else None
+                        if game and game.status in ("waiting", "playing"):
+                            await send(ws, {
+                                "type": "hello_result",
+                                "restored": True,
+                                "player_id": account_id,
+                                "username": username,
+                            })
+                            await broadcast_game_state(game_id)
+                            if game.status == "waiting":
+                                await broadcast_lobby_state()
+                        else:
+                            await send(ws, {
+                                "type": "hello_result",
+                                "restored": False,
+                                "player_id": account_id,
+                                "username": username,
+                            })
+                            await send(ws, {"type": "lobby_state", "games": lobby.list_games()})
+                        continue
+
+                # --- Legacy: ephemeral saved_player_id (guests) ---
                 saved_id = msg.get("saved_player_id", "")
                 game_id = player_games.get(saved_id)
                 game = lobby.get_game(game_id) if game_id else None

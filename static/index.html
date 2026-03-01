@@ -8,15 +8,102 @@
 </head>
 <body>
 
-  <!-- LOBBY VIEW -->
-  <div id="view-lobby" class="view active">
+  <!-- AUTH VIEW (login / register / forgot password) -->
+  <div id="view-auth" class="view">
     <div class="lobby-container">
       <h1>Mish Mish</h1>
       <p class="subtitle">A two-deck rummy card game</p>
-      <div class="name-row">
-        <input id="player-name" type="text" placeholder="Your name" maxlength="20" />
-        <button id="btn-create" onclick="createGame()">Create Game</button>
+
+      <!-- Tab switcher -->
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tab-login"    onclick="switchAuthTab('login')">Sign In</button>
+        <button class="auth-tab"        id="tab-register" onclick="switchAuthTab('register')">Register</button>
+        <button class="auth-tab"        id="tab-guest"    onclick="switchAuthTab('guest')">Guest</button>
       </div>
+
+      <!-- Login panel -->
+      <div id="auth-login" class="auth-panel">
+        <div class="auth-field">
+          <input id="login-username" type="text" placeholder="Username" maxlength="20" autocomplete="username" />
+        </div>
+        <div class="auth-field">
+          <input id="login-password" type="password" placeholder="Password" autocomplete="current-password" />
+        </div>
+        <div id="login-error" class="auth-error"></div>
+        <button onclick="doLogin()">Sign In</button>
+        <p class="auth-link"><a href="#" onclick="switchAuthTab('forgot'); return false;">Forgot password?</a></p>
+      </div>
+
+      <!-- Register panel -->
+      <div id="auth-register" class="auth-panel" style="display:none">
+        <div class="auth-field">
+          <input id="reg-username" type="text" placeholder="Choose a username" maxlength="20" autocomplete="username" />
+        </div>
+        <div class="auth-field">
+          <input id="reg-password" type="password" placeholder="Password (min 6 chars)" autocomplete="new-password" />
+        </div>
+        <div class="auth-field">
+          <input id="reg-phone" type="tel" placeholder="Phone number (optional, for password reset)" autocomplete="tel" />
+        </div>
+        <div id="reg-error" class="auth-error"></div>
+        <button onclick="doRegister()">Create Account</button>
+      </div>
+
+      <!-- Guest panel -->
+      <div id="auth-guest" class="auth-panel" style="display:none">
+        <p class="auth-hint">Play without an account. Your session won't persist across browser restarts.</p>
+        <div class="auth-field">
+          <input id="guest-name" type="text" placeholder="Your display name" maxlength="20" />
+        </div>
+        <div id="guest-error" class="auth-error"></div>
+        <button onclick="doGuest()">Play as Guest</button>
+      </div>
+
+      <!-- Forgot password panel -->
+      <div id="auth-forgot" class="auth-panel" style="display:none">
+        <p class="auth-hint">Enter your phone number and we'll text you a reset link.</p>
+        <div class="auth-field">
+          <input id="forgot-phone" type="tel" placeholder="Phone number" autocomplete="tel" />
+        </div>
+        <div id="forgot-error" class="auth-error"></div>
+        <div id="forgot-success" class="auth-success" style="display:none"></div>
+        <button onclick="doForgot()">Send Reset Link</button>
+        <p class="auth-link"><a href="#" onclick="switchAuthTab('login'); return false;">Back to sign in</a></p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- PASSWORD RESET VIEW (landed from SMS link) -->
+  <div id="view-reset" class="view">
+    <div class="lobby-container">
+      <h1>Mish Mish</h1>
+      <p class="subtitle">Reset your password</p>
+      <div class="auth-field">
+        <input id="reset-password" type="password" placeholder="New password (min 6 chars)" autocomplete="new-password" />
+      </div>
+      <div class="auth-field">
+        <input id="reset-password2" type="password" placeholder="Confirm new password" autocomplete="new-password" />
+      </div>
+      <div id="reset-error" class="auth-error"></div>
+      <div id="reset-success" class="auth-success" style="display:none"></div>
+      <button id="btn-reset-submit" onclick="doResetPassword()">Set New Password</button>
+    </div>
+  </div>
+
+  <!-- LOBBY VIEW -->
+  <div id="view-lobby" class="view">
+    <div class="lobby-container">
+      <h1>Mish Mish</h1>
+      <p class="subtitle">A two-deck rummy card game</p>
+
+      <!-- Signed-in identity bar -->
+      <div class="identity-bar">
+        <span id="identity-label"></span>
+        <button class="identity-action" id="btn-sign-out" onclick="signOut()" style="display:none">Sign out</button>
+      </div>
+
+      <button id="btn-create" onclick="createGame()">Create Game</button>
       <h2>Open Games</h2>
       <div id="game-list">
         <p class="empty-msg">No games available. Create one!</p>
