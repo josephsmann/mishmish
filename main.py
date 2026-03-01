@@ -39,7 +39,9 @@ player_games: Dict[str, str] = {}        # player_id -> game_id
 
 @app.get("/")
 async def index():
-    return FileResponse(STATIC_DIR / "index.html")
+    response = FileResponse(STATIC_DIR / "index.html")
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
 
 
 # ---------------------------------------------------------------------------

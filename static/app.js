@@ -964,11 +964,13 @@ function escHtml(str) {
     return; // Don't connect WS yet; user needs to set a new password first
   }
 
-  // If the user already has a JWT, skip the auth screen
+  // Show the correct initial view
   if (authToken) {
     playerName = authUsername || "";
     renderIdentityBar();
     showView("lobby");
+  } else {
+    showView("auth");
   }
 
   connect();
