@@ -253,7 +253,11 @@ async function doForgot() {
     });
     const data = await res.json();
     if (!data.ok) { errEl.textContent = data.error; return; }
-    succEl.textContent = data.message;
+    if (data.reset_link) {
+      succEl.innerHTML = `${escHtml(data.message)}<br><a href="${escHtml(data.reset_link)}" style="color:#f5c842;word-break:break-all">${escHtml(data.reset_link)}</a>`;
+    } else {
+      succEl.textContent = data.message;
+    }
     succEl.style.display = "block";
   } catch (e) {
     errEl.textContent = "Network error, try again";

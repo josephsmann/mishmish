@@ -219,14 +219,22 @@ def normalize_phone(raw: str) -> str:
 
 
 async def send_reset_sms(phone: str, reset_token: str):
-    """Send a password-reset link via Twilio SMS."""
+    """Send a password-reset link via Twilio SMS.
+    Falls back to logging the link if TWILIO_FROM_NUMBER is not configured."""
+    import logging
     link = f"{APP_BASE_URL}/reset-password?token={reset_token}"
     body = f"Mish Mish password reset — tap the link (expires in {RESET_TOKEN_EXPIRE_MINUTES} min):\n{link}"
+
+    from_number = os.environ.get("TWILIO_FROM_NUMBER")
+    if not from_number:
+        logging.warning(f"TWILIO_FROM_NUMBER not set — reset link for {phone}: {link}")
+        return
+
     client = _twilio_client()
     # Twilio's REST client is sync; run in executor to avoid blocking
     import asyncio
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(
         None,
-        lambda: client.messages.create(to=phone, from_=_twilio_from(), body=body),
+        lambda: client.messages.create(to=phone, from_=from_number, body=body),
     )

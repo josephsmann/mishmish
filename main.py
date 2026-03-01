@@ -105,16 +105,22 @@ async def forgot_password(request: Request):
     phone = auth.normalize_phone(phone_raw)
     user = await auth.get_user_by_phone(phone)
 
-    # Always return success to avoid leaking whether a phone exists
+    import os, logging
+    sms_configured = bool(os.environ.get("TWILIO_FROM_NUMBER"))
+
+    reset_link = None
     if user:
         reset_token = await auth.create_reset_token(user["id"])
         try:
             await auth.send_reset_sms(phone, reset_token)
         except Exception as e:
-            # Don't expose internal errors
-            import logging
             logging.warning(f"SMS send failed: {e}")
+        # In dev mode (no SMS number configured), surface the link directly
+        if not sms_configured:
+            reset_link = f"{auth.APP_BASE_URL}/reset-password?token={reset_token}"
 
+    if reset_link:
+        return _json_ok({"message": "SMS not configured — use this link to reset:", "reset_link": reset_link})
     return _json_ok({"message": "If that number is registered, a reset link has been sent."})
 
 
