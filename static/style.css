@@ -123,6 +123,26 @@ body {
   background: #78909c;
 }
 
+/* ---- LOBBY ACTIONS ---- */
+.lobby-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.lobby-actions button {
+  flex: 1;
+}
+
+#btn-play-bot {
+  background: #4caf50;
+  color: #fff;
+}
+
+#btn-play-bot:hover:not(:disabled) {
+  background: #66bb6a;
+}
+
 /* ---- LOBBY ---- */
 .lobby-container {
   max-width: 560px;

@@ -22,6 +22,9 @@ let previewHandSize = null; // live hand size of the current player (from stage_
 let authToken = localStorage.getItem("mishmish-auth-token") || null;
 let authUsername = localStorage.getItem("mishmish-username") || null;
 
+// ---- Play vs Bot flag ----
+let _playingVsBot = false;
+
 // ---- WebSocket ----
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -104,7 +107,14 @@ function handleMessage(msg) {
     case "joined_game":
       inGame = true;
       isCreator = msg.is_creator;
-      showView("waiting");
+      if (_playingVsBot && msg.is_creator) {
+        // Sequentially add a bot then start — server handles both synchronously
+        send({ type: "add_bot" });
+        send({ type: "start_game" });
+        _playingVsBot = false;
+      } else {
+        showView("waiting");
+      }
       break;
 
     case "table_preview":
@@ -342,6 +352,12 @@ function renderLobby(games) {
 
 function createGame() {
   if (!playerName) { showError("No player name set"); return; }
+  send({ type: "create_game", name: playerName });
+}
+
+function playVsBot() {
+  if (!playerName) { showError("No player name set"); return; }
+  _playingVsBot = true;
   send({ type: "create_game", name: playerName });
 }
 

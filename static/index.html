@@ -103,7 +103,10 @@
         <button class="identity-action" id="btn-sign-out" onclick="signOut()" style="display:none">Sign out</button>
       </div>
 
-      <button id="btn-create" onclick="createGame()">Create Game</button>
+      <div class="lobby-actions">
+        <button id="btn-play-bot" onclick="playVsBot()">Play vs Bot</button>
+        <button id="btn-create" onclick="createGame()">Create Game</button>
+      </div>
       <h2>Open Games</h2>
       <div id="game-list">
         <p class="empty-msg">No games available. Create one!</p>
