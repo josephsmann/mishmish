@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import uuid
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Dict
 
@@ -49,6 +50,7 @@ async def static_files(filename: str):
 
 
 lobby = Lobby()
+_bot_pool = ProcessPoolExecutor(max_workers=2)
 connections: Dict[str, WebSocket] = {}   # player_id -> WebSocket
 player_games: Dict[str, str] = {}        # player_id -> game_id
 
@@ -355,7 +357,10 @@ async def trigger_bot_if_needed(game_id: str):
     if current is None or current['id'] != bot_id:
         return
 
-    new_table = find_best_play(current['hand'], game.table)
+    loop = asyncio.get_event_loop()
+    new_table = await loop.run_in_executor(
+        _bot_pool, find_best_play, current['hand'], game.table
+    )
     if new_table is None:
         log.info("bot draw_card: bot=%s game=%s", bot_id, game_id)
         game.draw_card(bot_id)
