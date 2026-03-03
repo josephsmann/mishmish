@@ -594,6 +594,7 @@ function makeCardEl(card, draggable, sourceData) {
     el.setAttribute("draggable", "true");
     el.addEventListener("dragstart", (e) => onDragStart(e, sourceData));
     el.addEventListener("dragend", onDragEnd);
+    el.addEventListener("touchstart", () => { hapticFeedback(); playCardPickupSound(); }, { passive: true });
   }
 
   return el;
@@ -601,6 +602,8 @@ function makeCardEl(card, draggable, sourceData) {
 
 // ---- Drag & Drop ----
 function onDragStart(e, sourceData) {
+  hapticFeedback();
+  playCardPickupSound();
   dragSource = sourceData;
   e.dataTransfer.effectAllowed = "move";
   e.dataTransfer.setData("text/plain", JSON.stringify(sourceData));
@@ -859,6 +862,31 @@ function playTurnSound() {
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.5);
+    });
+  } catch (e) { /* AudioContext not available */ }
+}
+
+function hapticFeedback() {
+  if (navigator.vibrate) navigator.vibrate(40);
+}
+
+function playCardPickupSound() {
+  if (!soundEnabled) return;
+  try {
+    const ctx = getAudioCtx();
+    ctx.resume().then(() => {
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.04, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) {
+        data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+      }
+      const src = ctx.createBufferSource();
+      const gain = ctx.createGain();
+      src.buffer = buf;
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.18, ctx.currentTime);
+      src.start(ctx.currentTime);
     });
   } catch (e) { /* AudioContext not available */ }
 }

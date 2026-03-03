@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import uuid
 from pathlib import Path
 from typing import Dict
@@ -12,6 +13,13 @@ from bot import find_best_play
 from lobby import Lobby
 import auth
 import db
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
+log = logging.getLogger("mishmish")
 
 app = FastAPI()
 
@@ -182,23 +190,44 @@ async def reset_password(request: Request):
 # WebSocket helpers
 # ---------------------------------------------------------------------------
 
-async def send(ws: WebSocket, msg: dict):
-    await ws.send_text(json.dumps(msg))
+async def send(ws: WebSocket, msg: dict) -> bool:
+    """Send a message; returns False and logs if the send fails."""
+    try:
+        await ws.send_text(json.dumps(msg))
+        return True
+    except Exception as exc:
+        log.warning("send failed (type=%s): %s", msg.get("type"), exc)
+        return False
 
 
 async def broadcast_game_state(game_id: str):
     game = lobby.get_game(game_id)
     if game is None:
+        log.warning("broadcast_game_state: game %s not found", game_id)
         return
     # Persist state on every change so a restart can resume in-progress games
     if game.status in ("waiting", "playing"):
         await db.save_active_game(game)
+    current = game._get_current_player()
+    current_id = current["id"] if current else None
     for player in game.players:
         pid = player['id']
         ws = connections.get(pid)
         if ws:
             state = game.state_for_player(pid)
-            await send(ws, {"type": "game_state", "state": state})
+            ok = await send(ws, {"type": "game_state", "state": state})
+            if not ok:
+                log.warning(
+                    "broadcast_game_state: failed to send to player %s (game %s, their_turn=%s)",
+                    pid, game_id, pid == current_id,
+                )
+                # Remove the dead socket so future broadcasts skip it cleanly
+                connections.pop(pid, None)
+        else:
+            log.info(
+                "broadcast_game_state: player %s has no connection (game %s, their_turn=%s)",
+                pid, game_id, pid == current_id,
+            )
 
 
 async def leave_waiting_game(player_id: str):
@@ -238,6 +267,7 @@ async def trigger_bot_if_needed(game_id: str):
         return
 
     bot_id = current['id']
+    log.info("bot turn: bot=%s game=%s", bot_id, game_id)
     await asyncio.sleep(0.8)
 
     # Re-check after sleep
@@ -250,11 +280,15 @@ async def trigger_bot_if_needed(game_id: str):
 
     new_table = find_best_play(current['hand'], game.table)
     if new_table is None:
+        log.info("bot draw_card: bot=%s game=%s", bot_id, game_id)
         game.draw_card(bot_id)
     else:
         ok, _ = game.play_turn(bot_id, new_table)
         if not ok:
+            log.warning("bot play_turn failed, drawing: bot=%s game=%s", bot_id, game_id)
             game.draw_card(bot_id)
+        else:
+            log.info("bot play_turn ok: bot=%s game=%s", bot_id, game_id)
 
     await broadcast_game_state(game_id)
     await cleanup_ended_game(game_id)
@@ -278,6 +312,7 @@ async def websocket_endpoint(ws: WebSocket):
     # Use a mutable container so the reconnect handler can update the id
     pid = [uuid.uuid4().hex]
     connections[pid[0]] = ws
+    log.info("ws connect: tmp_pid=%s total_connections=%d", pid[0], len(connections))
     await send(ws, {"type": "connected", "player_id": pid[0]})
     await send(ws, {"type": "lobby_state", "games": lobby.list_games()})
 
@@ -296,6 +331,7 @@ async def websocket_endpoint(ws: WebSocket):
                     if payload:
                         account_id = payload["sub"]
                         username = payload["username"]
+                        log.info("hello jwt: tmp=%s -> account=%s username=%s", player_id, account_id, username)
                         # Switch the connection to the persistent account id
                         connections.pop(player_id, None)
                         pid[0] = account_id
@@ -402,8 +438,10 @@ async def websocket_endpoint(ws: WebSocket):
                     continue
                 result = game.draw_card(player_id)
                 if result is None and game.status != "ended":
+                    log.warning("draw_card rejected: pid=%s game=%s", player_id, game_id)
                     await send(ws, {"type": "error", "message": "Not your turn or empty deck"})
                     continue
+                log.info("draw_card: pid=%s game=%s status=%s", player_id, game_id, game.status)
                 await broadcast_game_state(game_id)
                 await cleanup_ended_game(game_id)
                 await trigger_bot_if_needed(game_id)
@@ -419,8 +457,10 @@ async def websocket_endpoint(ws: WebSocket):
                 new_table = msg.get("table", [])
                 ok, reason = game.play_turn(player_id, new_table)
                 if not ok:
+                    log.warning("play_turn rejected: pid=%s game=%s reason=%s", player_id, game_id, reason)
                     await send(ws, {"type": "error", "message": reason})
                     continue
+                log.info("play_turn ok: pid=%s game=%s status=%s", player_id, game_id, game.status)
                 await broadcast_game_state(game_id)
                 await cleanup_ended_game(game_id)
                 await trigger_bot_if_needed(game_id)
@@ -486,6 +526,16 @@ async def websocket_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         player_id = pid[0]
         connections.pop(player_id, None)
+        game_id = player_games.get(player_id)
+        log.info(
+            "ws disconnect: pid=%s game_id=%s remaining_connections=%d",
+            player_id, game_id, len(connections),
+        )
         # Keep player in their game so they can reconnect (handles iOS focus loss,
         # brief network drops, etc). Games are only cleaned up when they end.
+        await broadcast_lobby_state()
+    except Exception as exc:
+        player_id = pid[0]
+        connections.pop(player_id, None)
+        log.exception("ws error: pid=%s: %s", player_id, exc)
         await broadcast_lobby_state()
