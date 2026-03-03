@@ -20,7 +20,7 @@ class Lobby:
     def list_games(self) -> List[Dict]:
         result = []
         for game in self.games.values():
-            if game.status in ("waiting", "playing"):
+            if game.status == "waiting":
                 result.append({
                     "game_id": game.game_id,
                     "status": game.status,

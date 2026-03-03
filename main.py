@@ -253,9 +253,12 @@ async def cleanup_ended_game(game_id: str):
     if game and game.status == "ended":
         for p in game.players:
             player_games.pop(p['id'], None)
-        await db.record_game_end(game, "ended")
-        await db.delete_active_game(game_id)
         lobby.remove_game(game_id)
+        try:
+            await db.record_game_end(game, "ended")
+            await db.delete_active_game(game_id)
+        except Exception as exc:
+            log.error("cleanup_ended_game: DB persist failed for game=%s: %s", game_id, exc)
 
 
 async def trigger_bot_if_needed(game_id: str):
@@ -503,21 +506,31 @@ async def websocket_endpoint(ws: WebSocket):
             elif msg_type == "abort_game":
                 game_id = player_games.get(player_id)
                 if not game_id:
+                    log.warning("abort_game: pid=%s has no game", player_id)
                     await send(ws, {"type": "error", "message": "Not in a game"})
                     continue
                 game = lobby.get_game(game_id)
                 if game is None or game.status == "ended":
+                    log.warning("abort_game: game %s not found or already ended (pid=%s)", game_id, player_id)
                     await send(ws, {"type": "error", "message": "No active game to abort"})
                     continue
-                # Notify all players in the game, then clean up
+                log.info("abort_game: pid=%s aborting game=%s status=%s", player_id, game_id, game.status)
+                # Clean up in-memory state first (never fails)
+                for p in game.players:
+                    player_games.pop(p['id'], None)
+                lobby.remove_game(game_id)
+                # Notify all players; the aborter gets reason="self", others get reason="other"
                 for p in game.players:
                     ws_p = connections.get(p['id'])
                     if ws_p:
-                        await send(ws_p, {"type": "game_aborted", "message": "Game was aborted"})
-                    player_games.pop(p['id'], None)
-                await db.record_game_end(game, "aborted")
-                await db.delete_active_game(game_id)
-                lobby.remove_game(game_id)
+                        reason = "self" if p['id'] == player_id else "other"
+                        await send(ws_p, {"type": "game_aborted", "message": "Game was aborted", "reason": reason})
+                # Persist to DB (best-effort)
+                try:
+                    await db.record_game_end(game, "aborted")
+                    await db.delete_active_game(game_id)
+                except Exception as exc:
+                    log.error("abort_game: DB persist failed for game=%s: %s", game_id, exc)
                 await broadcast_lobby_state()
 
             else:

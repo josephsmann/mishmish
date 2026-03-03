@@ -148,6 +148,7 @@ function handleMessage(msg) {
         renderGame();
       } else {
         // waiting
+        showView("waiting");
         renderWaiting();
       }
       break;
@@ -155,13 +156,11 @@ function handleMessage(msg) {
     case "game_aborted":
       inGame = false;
       serverState = null;
-      if (authToken) {
-        renderIdentityBar();
-        showView("lobby");
-      } else {
-        showView("lobby");
-      }
-      showError(msg.message || "Game was aborted");
+      renderIdentityBar();
+      showView("lobby");
+      // Only show an error banner if this was unexpected (aborted by someone else).
+      // The server sends "reason" to distinguish self-abort vs forced abort.
+      if (msg.reason !== "self") showError(msg.message || "Game was aborted");
       break;
 
     case "error":
