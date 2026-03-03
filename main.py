@@ -385,7 +385,10 @@ async def broadcast_lobby_state():
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
-    await ws.accept()
+    try:
+        await ws.accept()
+    except Exception:
+        return  # Client disconnected before handshake completed
     # Use a mutable container so the reconnect handler can update the id
     pid = [uuid.uuid4().hex]
     connections[pid[0]] = ws
@@ -624,5 +627,9 @@ async def websocket_endpoint(ws: WebSocket):
     except Exception as exc:
         player_id = pid[0]
         connections.pop(player_id, None)
-        log.exception("ws error: pid=%s: %s", player_id, exc)
+        if "not connected" in str(exc).lower() or "accept" in str(exc).lower():
+            # Socket dropped before/during accept — treat as a normal disconnect
+            log.warning("ws stale connection cleaned up: pid=%s", player_id)
+        else:
+            log.exception("ws error: pid=%s: %s", player_id, exc)
         await broadcast_lobby_state()
