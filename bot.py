@@ -1,7 +1,8 @@
+from collections import defaultdict
 from itertools import combinations
 from typing import List, Optional, FrozenSet
 
-from deck import Card, is_valid_meld
+from deck import Card, is_valid_meld, is_valid_run, is_valid_set
 
 
 def find_best_play(
@@ -12,108 +13,99 @@ def find_best_play(
     Returns a new full table state that maximises cards played from hand,
     or None if the bot should draw instead.
 
-    Strategy: backtracking search over all combinations of
-    (a) extending existing table melds with hand cards, and
-    (b) creating new melds from remaining hand cards.
-    Picks the combination that removes the most cards from hand.
-    A winning move (empties hand) is returned immediately.
+    Strategy: flatten all table cards into a pool, then find the largest
+    subset of hand cards that can be added so the entire pool re-partitions
+    into valid melds.  This allows splitting and reorganising existing melds,
+    not just appending to them.
     """
-    best = [frozenset(), list(table)]  # [used_hand_indices, resulting_table]
-    _search(hand, table, 0, frozenset(), list(table), best)
-    if not best[0]:
+    table_cards = [card for meld in table for card in meld]
+
+    # Try to play as many hand cards as possible (largest subset first).
+    for size in range(len(hand), 0, -1):
+        for combo in combinations(range(len(hand)), size):
+            pool = table_cards + [hand[i] for i in combo]
+            partition = _exact_cover(pool)
+            if partition is not None:
+                return partition
+
+    return None
+
+
+# ── Exact-cover search ────────────────────────────────────────────────────────
+
+def _exact_cover(cards: List[Card]) -> Optional[List[List[Card]]]:
+    """
+    Partition `cards` into valid melds, or return None if impossible.
+
+    Uses exact-cover backtracking: at each step pick the first uncovered card
+    and branch over every candidate meld that covers it.  This is far more
+    efficient than iterating over candidates in insertion order.
+    """
+    n = len(cards)
+    if n < 3:
         return None
-    return best[1]
 
-
-# ── Extension search ──────────────────────────────────────────────────────────
-
-def _search(hand, orig_table, meld_idx, used, cur_table, best):
-    """
-    Recurse through each table meld deciding whether/how to extend it,
-    then find the best new melds from remaining hand cards.
-    """
-    if len(best[0]) == len(hand):   # already found a winning play
-        return
-
-    if meld_idx == len(orig_table):
-        # Done with extensions — maximise new melds from leftover cards
-        unused = [i for i in range(len(hand)) if i not in used]
-        new_used, new_melds = _optimal_new_melds(hand, unused)
-        total = used | new_used
-        if len(total) > len(best[0]):
-            best[0] = total
-            best[1] = cur_table + new_melds
-        return
-
-    # Branch 1: skip this meld
-    _search(hand, orig_table, meld_idx + 1, used, cur_table, best)
-    if len(best[0]) == len(hand):
-        return
-
-    # Branch 2: extend this meld with some subset of compatible hand cards
-    meld = cur_table[meld_idx]
-    compatible = _compatible_unused(hand, meld, used)
-    for size in range(1, len(compatible) + 1):
-        for combo in combinations(compatible, size):
-            extended = meld + [hand[i] for i in combo]
-            if is_valid_meld(extended):
-                new_table = cur_table[:meld_idx] + [extended] + cur_table[meld_idx + 1:]
-                _search(hand, orig_table, meld_idx + 1,
-                        used | frozenset(combo), new_table, best)
-                if len(best[0]) == len(hand):
-                    return
-
-
-def _compatible_unused(hand, meld, used):
-    """
-    Indices of unused hand cards that could plausibly extend this meld.
-    For sets: same rank.  For runs: same suit.
-    Actual validity is confirmed by is_valid_meld after appending.
-    """
-    unused = [i for i in range(len(hand)) if i not in used]
-    if len(set(c['rank'] for c in meld)) == 1:   # set meld
-        rank = meld[0]['rank']
-        return [i for i in unused if hand[i]['rank'] == rank]
-    else:                                          # run meld
-        suit = meld[0]['suit']
-        return [i for i in unused if hand[i]['suit'] == suit]
-
-
-# ── New-meld search ───────────────────────────────────────────────────────────
-
-def _optimal_new_melds(hand, unused_indices):
-    """
-    Find the maximum-weight set of non-overlapping new melds that can be
-    formed from the given unused hand indices.
-    Returns (frozenset_of_used_indices, list_of_meld_card_lists).
-    """
-    if len(unused_indices) < 3:
-        return frozenset(), []
-
-    candidates = []
-    for size in range(3, len(unused_indices) + 1):
-        for combo in combinations(unused_indices, size):
-            cards = [hand[i] for i in combo]
-            if is_valid_meld(cards):
-                candidates.append((frozenset(combo), cards))
-
+    candidates = _build_candidates(cards)
     if not candidates:
-        return frozenset(), []
+        return None
 
-    # Largest melds first for better pruning
-    candidates.sort(key=lambda x: len(x[0]), reverse=True)
-    best: list = [frozenset(), []]
+    # Index: card position → list of candidate indices that include it
+    covers: List[List[int]] = [[] for _ in range(n)]
+    for ci, (indices, _) in enumerate(candidates):
+        for idx in indices:
+            covers[idx].append(ci)
 
-    def _bt(idx, used, cur_melds):
-        if len(used) > len(best[0]):
-            best[0] = used
-            best[1] = cur_melds[:]
-        if idx >= len(candidates) or len(best[0]) == len(unused_indices):
-            return
-        for i in range(idx, len(candidates)):
-            indices, cards = candidates[i]
+    result: List = [None]
+
+    def bt(used: FrozenSet[int], melds: list) -> bool:
+        if len(used) == n:
+            result[0] = melds[:]
+            return True
+        # Find the first uncovered position
+        first = next(i for i in range(n) if i not in used)
+        # Branch on each candidate meld that covers `first`
+        for ci in covers[first]:
+            indices, meld_cards = candidates[ci]
             if indices.isdisjoint(used):
-                _bt(i + 1, used | indices, cur_melds + [cards])
+                if bt(used | indices, melds + [meld_cards]):
+                    return True
+        return False
 
-    _bt(0, frozenset(), [])
-    return best[0], best[1]
+    bt(frozenset(), [])
+    return result[0]
+
+
+def _build_candidates(cards: List[Card]):
+    """
+    Enumerate all valid melds that can be formed from `cards`, returning a
+    list of (frozenset_of_indices, card_list) pairs.
+
+    Candidates are generated within same-rank groups (sets) and same-suit
+    groups (runs) only, which is far cheaper than trying all C(n, k).
+    """
+    n = len(cards)
+    candidates = []
+
+    # Sets: all valid combinations within each rank group
+    by_rank: dict = defaultdict(list)
+    for i, c in enumerate(cards):
+        by_rank[c['rank']].append(i)
+    for indices in by_rank.values():
+        for size in range(3, len(indices) + 1):
+            for combo in combinations(indices, size):
+                meld_cards = [cards[i] for i in combo]
+                if is_valid_set(meld_cards):
+                    candidates.append((frozenset(combo), meld_cards))
+
+    # Runs: all valid combinations within each suit group
+    by_suit: dict = defaultdict(list)
+    for i, c in enumerate(cards):
+        by_suit[c['suit']].append(i)
+    for indices in by_suit.values():
+        for size in range(3, len(indices) + 1):
+            for combo in combinations(indices, size):
+                meld_cards = [cards[i] for i in combo]
+                if is_valid_run(meld_cards):
+                    candidates.append((frozenset(combo), meld_cards))
+
+    return candidates
