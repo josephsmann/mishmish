@@ -119,6 +119,13 @@ class Game:
         cards_removed = old_keys - new_keys
 
         if cards_removed:
+            import logging as _log
+            _log.getLogger("mishmish").warning(
+                "play_turn remove detail: removed=%s added=%s old_table=%s new_table=%s",
+                dict(cards_removed), dict(cards_added),
+                [[card_key(c) for c in m] for m in self.table],
+                [[card_key(c) for c in m] for m in new_table],
+            )
             return False, "Cannot remove cards from table"
         if not cards_added:
             return False, "Must play at least one card"
