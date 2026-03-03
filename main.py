@@ -1,11 +1,12 @@
 import asyncio
 import json
 import logging
+import os
 import uuid
 from pathlib import Path
 from typing import Dict
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Header
 from fastapi.responses import FileResponse, Response, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -159,6 +160,79 @@ async def history_player_games(player_id: str, limit: int = 20, offset: int = 0)
     limit = min(limit, 100)
     games = await db.get_games_for_player(player_id=player_id, limit=limit, offset=offset)
     return _json_ok({"games": games})
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoints
+# ---------------------------------------------------------------------------
+
+def _check_admin(x_admin_key: str | None) -> bool:
+    admin_key = os.environ.get("ADMIN_KEY", "")
+    return bool(admin_key and x_admin_key == admin_key)
+
+
+@app.get("/admin/games")
+async def admin_list_games(x_admin_key: str | None = Header(default=None)):
+    """List all active in-memory games with player names and status."""
+    if not _check_admin(x_admin_key):
+        return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
+    games = [
+        {
+            "game_id": g.game_id,
+            "status": g.status,
+            "players": [p["name"] for p in g.players],
+        }
+        for g in lobby.games.values()
+    ]
+    return _json_ok({"games": games, "count": len(games)})
+
+
+@app.delete("/admin/games/{game_id}")
+async def admin_delete_game(game_id: str, x_admin_key: str | None = Header(default=None)):
+    """Delete a specific game by ID."""
+    if not _check_admin(x_admin_key):
+        return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
+    game = lobby.get_game(game_id)
+    if game is None:
+        return _json_error("Game not found", status=404)
+    for p in game.players:
+        player_games.pop(p["id"], None)
+        ws_p = connections.get(p["id"])
+        if ws_p:
+            await send(ws_p, {"type": "game_aborted", "message": "Game removed by admin", "reason": "other"})
+    lobby.remove_game(game_id)
+    try:
+        await db.delete_active_game(game_id)
+    except Exception as exc:
+        log.warning("admin_delete_game: DB cleanup failed for %s: %s", game_id, exc)
+    log.info("admin_delete_game: deleted game=%s", game_id)
+    await broadcast_lobby_state()
+    return _json_ok({"deleted": game_id})
+
+
+@app.delete("/admin/games")
+async def admin_delete_all_games(x_admin_key: str | None = Header(default=None)):
+    """Delete all active games (useful for clearing out test games)."""
+    if not _check_admin(x_admin_key):
+        return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
+    game_ids = list(lobby.games.keys())
+    for game_id in game_ids:
+        game = lobby.get_game(game_id)
+        if game is None:
+            continue
+        for p in game.players:
+            player_games.pop(p["id"], None)
+            ws_p = connections.get(p["id"])
+            if ws_p:
+                await send(ws_p, {"type": "game_aborted", "message": "Game removed by admin", "reason": "other"})
+        lobby.remove_game(game_id)
+        try:
+            await db.delete_active_game(game_id)
+        except Exception as exc:
+            log.warning("admin_delete_all_games: DB cleanup failed for %s: %s", game_id, exc)
+    log.info("admin_delete_all_games: deleted %d games", len(game_ids))
+    await broadcast_lobby_state()
+    return _json_ok({"deleted": game_ids, "count": len(game_ids)})
 
 
 @app.get("/reset-password")
