@@ -284,7 +284,7 @@ async def broadcast_game_state(game_id: str):
         await db.save_active_game(game)
     current = game._get_current_player()
     current_id = current["id"] if current else None
-    for player in game.players:
+    for player in list(game.players):
         pid = player['id']
         ws = connections.get(pid)
         if ws:
@@ -374,7 +374,7 @@ async def trigger_bot_if_needed(game_id: str):
 
 async def broadcast_lobby_state():
     games = lobby.list_games()
-    for pid, ws in connections.items():
+    for pid, ws in list(connections.items()):
         if pid not in player_games:
             await send(ws, {"type": "lobby_state", "games": games})
 
