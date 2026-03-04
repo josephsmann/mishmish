@@ -56,19 +56,32 @@ def _(mo):
 @app.cell
 def _():
     # Mutable holder so the async WS cell can cancel its own previous task
-    _holder = {"task": None}
-    return
+    holder = {"task": None}
+    return (holder,)
 
 
-@app.cell(hide_code=True)
-def _(BASE_URL, HEADERS, asyncio, json, set_live, set_states, websockets):
+@app.cell
+def _(
+    BASE_URL,
+    HEADERS,
+    asyncio,
+    holder,
+    json,
+    mo,
+    set_live,
+    set_states,
+    websockets,
+):
     _ws_url = BASE_URL.replace("https://", "wss://") + "/admin/ws"
     _key = HEADERS["X-Admin-Key"]
+
+    get_ws_error, set_ws_error = mo.state(None)
 
     async def _listen():
         while True:
             try:
                 async with websockets.connect(f"{_ws_url}?key={_key}") as _ws:
+                    set_ws_error(None)
                     async for _raw in _ws:
                         _msg = json.loads(_raw)
                         if _msg.get("type") == "lobby_state":
@@ -78,24 +91,37 @@ def _(BASE_URL, HEADERS, asyncio, json, set_live, set_states, websockets):
                             set_states(lambda s, g=_gid, d=_msg["state"]: {**s, g: d})
             except asyncio.CancelledError:
                 break
-            except Exception:
+            except Exception as _e:
+                set_ws_error(str(_e))
                 await asyncio.sleep(3)  # reconnect after 3s on error
 
-    if _holder["task"] is not None and not _holder["task"].done():
-        _holder["task"].cancel()
+    if holder["task"] is not None and not holder["task"].done():
+        holder["task"].cancel()
 
-    _holder["task"] = asyncio.ensure_future(_listen())
+    try:
+        _loop = asyncio.get_event_loop()
+    except RuntimeError:
+        _loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_loop)
+    holder["task"] = _loop.create_task(_listen())
+    return (get_ws_error,)
+
+
+@app.cell
+def _(get_ws_error, mo):
+    _err = get_ws_error()
+    mo.md(f"🔴 **WebSocket error:** `{_err}`") if _err else mo.md("🟢 WebSocket connected")
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     history_refresh = mo.ui.run_button(label="Reload history")
     history_refresh
     return (history_refresh,)
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(BASE_URL, history_refresh, httpx):
     history_refresh
     _r = httpx.get(f"{BASE_URL}/history/games", params={"limit": 50}, timeout=10)
@@ -103,7 +129,7 @@ def _(BASE_URL, history_refresh, httpx):
     return (history_games,)
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(get_live, mo, pl):
     live_games = get_live()
     if live_games:
@@ -118,7 +144,7 @@ def _(get_live, mo, pl):
     return live_games, live_table
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(history_games, mo, pl):
     if history_games:
         _df = pl.DataFrame({
