@@ -51,6 +51,18 @@ async def init_game_tables():
                 PRIMARY KEY (game_id, player_id)
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS game_turns (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                game_id     TEXT NOT NULL,
+                turn_number INTEGER NOT NULL,
+                player_name TEXT NOT NULL,
+                action      TEXT NOT NULL,
+                table_json  TEXT NOT NULL,
+                hands_json  TEXT NOT NULL,
+                created_at  TEXT NOT NULL
+            )
+        """)
         await db.commit()
 
 
@@ -200,6 +212,62 @@ async def get_game_detail(game_id: str) -> Optional[Dict]:
     if row is None:
         return None
     return await _enrich_history_row(dict(row))
+
+
+async def record_turn(
+    game_id: str,
+    turn_number: int,
+    player_name: str,
+    action: str,
+    table: list,
+    hands: dict,
+) -> None:
+    """Record a single turn's state after it has been applied."""
+    created_at = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO game_turns
+                (game_id, turn_number, player_name, action, table_json, hands_json, created_at)
+            VALUES (?,?,?,?,?,?,?)
+            """,
+            (
+                game_id,
+                turn_number,
+                player_name,
+                action,
+                json.dumps(table),
+                json.dumps(hands),
+                created_at,
+            ),
+        )
+        await db.commit()
+
+
+async def get_turns(game_id: str) -> List[Dict]:
+    """Return all turns for a game in order."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT turn_number, player_name, action, table_json, hands_json, created_at
+            FROM game_turns WHERE game_id = ?
+            ORDER BY turn_number
+            """,
+            (game_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [
+        {
+            "turn_number": r["turn_number"],
+            "player_name": r["player_name"],
+            "action": r["action"],
+            "table": json.loads(r["table_json"]),
+            "hands": json.loads(r["hands_json"]),
+            "created_at": r["created_at"],
+        }
+        for r in rows
+    ]
 
 
 async def _enrich_history_row(row: Dict) -> Dict:

@@ -149,6 +149,12 @@ async def history_games(limit: int = 20, offset: int = 0):
     return _json_ok({"games": games})
 
 
+@app.get("/history/games/{game_id}/turns")
+async def history_game_turns(game_id: str):
+    turns = await db.get_turns(game_id)
+    return _json_ok({"turns": turns})
+
+
 @app.get("/history/games/{game_id}")
 async def history_game_detail(game_id: str):
     game = await db.get_game_detail(game_id)
@@ -348,6 +354,17 @@ async def cleanup_ended_game(game_id: str):
             log.error("cleanup_ended_game: DB persist failed for game=%s: %s", game_id, exc)
 
 
+async def record_turn(game, player_name: str, action: str):
+    """Snapshot the current game state as a turn record (best-effort)."""
+    hands = {p["name"]: p["hand"] for p in game.players}
+    try:
+        await db.record_turn(
+            game.game_id, game.turn_number, player_name, action, game.table, hands
+        )
+    except Exception as exc:
+        log.warning("record_turn failed: game=%s: %s", game.game_id, exc)
+
+
 async def trigger_bot_if_needed(game_id: str):
     game = lobby.get_game(game_id)
     if game is None or game.status != "playing":
@@ -375,13 +392,16 @@ async def trigger_bot_if_needed(game_id: str):
     if new_table is None:
         log.info("bot draw_card: bot=%s game=%s", bot_id, game_id)
         game.draw_card(bot_id)
+        await record_turn(game, current['name'], "draw")
     else:
         ok, _ = game.play_turn(bot_id, new_table)
         if not ok:
             log.warning("bot play_turn failed, drawing: bot=%s game=%s", bot_id, game_id)
             game.draw_card(bot_id)
+            await record_turn(game, current['name'], "draw")
         else:
             log.info("bot play_turn ok: bot=%s game=%s", bot_id, game_id)
+            await record_turn(game, current['name'], "play")
 
     await broadcast_game_state(game_id)
     await cleanup_ended_game(game_id)
@@ -532,12 +552,15 @@ async def websocket_endpoint(ws: WebSocket):
                 game = lobby.get_game(game_id)
                 if game is None:
                     continue
+                _drawing_player = game._get_current_player()
                 result = game.draw_card(player_id)
                 if result is None and game.status != "ended":
                     log.warning("draw_card rejected: pid=%s game=%s", player_id, game_id)
                     await send(ws, {"type": "error", "message": "Not your turn or empty deck"})
                     continue
                 log.info("draw_card: pid=%s game=%s status=%s", player_id, game_id, game.status)
+                if _drawing_player:
+                    await record_turn(game, _drawing_player['name'], "draw")
                 await broadcast_game_state(game_id)
                 await cleanup_ended_game(game_id)
                 await trigger_bot_if_needed(game_id)
@@ -551,12 +574,15 @@ async def websocket_endpoint(ws: WebSocket):
                 if game is None:
                     continue
                 new_table = msg.get("table", [])
+                _playing_player = game._get_current_player()
                 ok, reason = game.play_turn(player_id, new_table)
                 if not ok:
                     log.warning("play_turn rejected: pid=%s game=%s reason=%s", player_id, game_id, reason)
                     await send(ws, {"type": "error", "message": reason})
                     continue
                 log.info("play_turn ok: pid=%s game=%s status=%s", player_id, game_id, game.status)
+                if _playing_player:
+                    await record_turn(game, _playing_player['name'], "play")
                 await broadcast_game_state(game_id)
                 await cleanup_ended_game(game_id)
                 await trigger_bot_if_needed(game_id)

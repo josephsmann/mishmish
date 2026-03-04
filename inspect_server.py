@@ -29,20 +29,20 @@ def _():
     return BASE_URL, HEADERS
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     get_selected, set_selected = mo.state(None)  # {"game_id": str, "source": "live"|"history"}
     return get_selected, set_selected
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     refresh = mo.ui.refresh(options=["5s", "10s", "30s"], default_interval="5s")
     refresh
     return (refresh,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(BASE_URL, HEADERS, httpx, refresh):
     refresh
     _r = httpx.get(f"{BASE_URL}/admin/games", headers=HEADERS, timeout=10)
@@ -50,7 +50,7 @@ def _(BASE_URL, HEADERS, httpx, refresh):
     return (live_games,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(BASE_URL, httpx, refresh):
     refresh
     _r = httpx.get(f"{BASE_URL}/history/games", params={"limit": 50}, timeout=10)
@@ -58,7 +58,7 @@ def _(BASE_URL, httpx, refresh):
     return (history_games,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(live_games, mo, pl):
     if live_games:
         _df = pl.DataFrame({
@@ -72,7 +72,7 @@ def _(live_games, mo, pl):
     return (live_table,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(history_games, mo, pl):
     if history_games:
         _df = pl.DataFrame({
@@ -101,7 +101,7 @@ def _(history_table, live_table, mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(history_games, history_table, live_games, live_table, set_selected):
     if hasattr(live_table, "value") and live_table.value is not None and len(live_table.value) > 0:
         _gid = live_table.value["game_id"][0]
@@ -116,7 +116,7 @@ def _(history_games, history_table, live_games, live_table, set_selected):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(BASE_URL, HEADERS, get_selected, httpx):
     _sel = get_selected()
     game_detail = None
@@ -130,13 +130,7 @@ def _(BASE_URL, HEADERS, get_selected, httpx):
     return (game_detail,)
 
 
-@app.cell
-def _(game_detail):
-    game_detail
-    return
-
-
-@app.cell
+@app.cell(hide_code=True)
 def _(game_detail, get_selected, mo):
     _sel = get_selected()
     mo.stop(_sel is None, mo.md("_Select a game above to inspect it._"))
@@ -197,6 +191,87 @@ def _(game_detail, mo):
         _parts.append(f"<b>{_p.get('name','?')}</b> — {len(_hand)} cards: {_hand_html}<br>")
 
     mo.Html("".join(_parts))
+    return
+
+
+@app.cell
+def _(BASE_URL, get_selected, httpx):
+    _sel = get_selected()
+    game_turns = []
+    if _sel is not None:
+        _r = httpx.get(f"{BASE_URL}/history/games/{_sel['game_id']}/turns", timeout=10)
+        if _r.is_success:
+            game_turns = _r.json().get("turns", [])
+    return (game_turns,)
+
+
+@app.cell
+def _(game_turns, mo):
+    mo.stop(not game_turns, mo.md("_No turn history recorded for this game._"))
+
+    SUIT_SYMBOL = {"H": "♥", "D": "♦", "C": "♣", "S": "♠"}
+    SUIT_COLOR  = {"H": "#c0392b", "D": "#c0392b", "C": "#2c3e50", "S": "#2c3e50"}
+
+    def _card_html(card):
+        sym = SUIT_SYMBOL[card["suit"]]
+        col = SUIT_COLOR[card["suit"]]
+        return (
+            f'<span style="display:inline-block;border:1px solid #aaa;border-radius:4px;'
+            f'padding:2px 5px;margin:2px;font-size:0.85em;background:#fff;color:{col};'
+            f'font-family:monospace;min-width:1.8em;text-align:center;">'
+            f'{card["rank"]}{sym}</span>'
+        )
+
+    def _hand_html(cards):
+        return "".join(_card_html(c) for c in cards) if cards else "<em style='color:#888'>—</em>"
+
+    def _table_html(melds):
+        if not melds:
+            return "<em style='color:#888'>—</em>"
+        return " | ".join("".join(_card_html(c) for c in m) for m in melds)
+
+    _player_names = sorted({t["player_name"] for t in game_turns})
+
+    _rows = []
+    for _t in game_turns:
+        _action_badge = (
+            '<span style="background:#4caf50;color:#fff;border-radius:3px;padding:1px 5px;font-size:0.8em">play</span>'
+            if _t["action"] == "play" else
+            '<span style="background:#2196f3;color:#fff;border-radius:3px;padding:1px 5px;font-size:0.8em">draw</span>'
+        )
+        _player_cells = "".join(
+            f'<td style="padding:4px 8px;border-bottom:1px solid #333;vertical-align:top">{_hand_html(_t["hands"].get(n, []))}</td>'
+            for n in _player_names
+        )
+        _rows.append(
+            f'<tr>'
+            f'<td style="padding:4px 8px;border-bottom:1px solid #333;color:#aaa;white-space:nowrap">{_t["turn_number"]}</td>'
+            f'<td style="padding:4px 8px;border-bottom:1px solid #333">{_t["player_name"]} {_action_badge}</td>'
+            f'{_player_cells}'
+            f'<td style="padding:4px 8px;border-bottom:1px solid #333;vertical-align:top">{_table_html(_t["table"])}</td>'
+            f'</tr>'
+        )
+
+    _header_cells = "".join(
+        f'<th style="padding:4px 8px;text-align:left;border-bottom:2px solid #555">{n}</th>'
+        for n in _player_names
+    )
+    _html = f"""
+    <div style="overflow-x:auto">
+    <table style="border-collapse:collapse;font-size:0.9em;width:100%">
+      <thead>
+        <tr>
+          <th style="padding:4px 8px;text-align:left;border-bottom:2px solid #555">#</th>
+          <th style="padding:4px 8px;text-align:left;border-bottom:2px solid #555">Action</th>
+          {_header_cells}
+          <th style="padding:4px 8px;text-align:left;border-bottom:2px solid #555">Table</th>
+        </tr>
+      </thead>
+      <tbody>{"".join(_rows)}</tbody>
+    </table>
+    </div>
+    """
+    mo.Html(_html)
     return
 
 

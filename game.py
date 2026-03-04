@@ -19,6 +19,7 @@ class Game:
         self.winner_id: Optional[str] = None
         self.started_at: Optional[str] = None
         self.ended_at: Optional[str] = None
+        self.turn_number: int = 0
 
     def to_dict(self) -> Dict:
         return {
@@ -33,6 +34,7 @@ class Game:
             "winner_id": self.winner_id,
             "started_at": self.started_at,
             "ended_at": self.ended_at,
+            "turn_number": self.turn_number,
         }
 
     @classmethod
@@ -47,6 +49,7 @@ class Game:
         g.winner_id = d.get("winner_id")
         g.started_at = d.get("started_at")
         g.ended_at = d.get("ended_at")
+        g.turn_number = d.get("turn_number", 0)
         return g
 
     def add_player(self, player_id: str, name: str, is_bot: bool = False) -> bool:
@@ -195,3 +198,4 @@ class Game:
 
     def _advance_turn(self):
         self.current_player_idx = (self.current_player_idx + 1) % len(self.players)
+        self.turn_number += 1
