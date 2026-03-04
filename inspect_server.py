@@ -56,7 +56,8 @@ def _(mo):
 @app.cell
 def _():
     # Mutable holder so the async WS cell can cancel its own previous task
-    holder = {"task": None}
+    # Also acts as the authoritative states cache to avoid functional-update races
+    holder = {"task": None, "states": {}}
     return (holder,)
 
 
@@ -88,7 +89,8 @@ def _(
                             set_live(_msg.get("games", []))
                         elif _msg.get("type") == "game_state":
                             _gid = _msg["state"]["game_id"]
-                            set_states(lambda s, g=_gid, d=_msg["state"]: {**s, g: d})
+                            holder["states"][_gid] = _msg["state"]
+                            set_states(dict(holder["states"]))
             except asyncio.CancelledError:
                 break
             except Exception as _e:
