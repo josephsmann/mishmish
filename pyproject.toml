@@ -12,3 +12,6 @@ dependencies = [
     "twilio>=9.10.2",
     "httpx>=0.28.1",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
