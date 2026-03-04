@@ -156,7 +156,7 @@ def _(game_detail, get_selected, mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(game_detail, mo):
     mo.stop(game_detail is None)
 
@@ -191,10 +191,10 @@ def _(game_detail, mo):
         _parts.append(f"<b>{_p.get('name','?')}</b> — {len(_hand)} cards: {_hand_html}<br>")
 
     mo.Html("".join(_parts))
-    return
+    return SUIT_COLOR, SUIT_SYMBOL
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(BASE_URL, get_selected, httpx):
     _sel = get_selected()
     game_turns = []
@@ -205,12 +205,12 @@ def _(BASE_URL, get_selected, httpx):
     return (game_turns,)
 
 
-@app.cell
-def _(game_turns, mo):
+@app.cell(hide_code=True)
+def _(SUIT_COLOR, SUIT_SYMBOL, game_turns, mo):
     mo.stop(not game_turns, mo.md("_No turn history recorded for this game._"))
 
-    SUIT_SYMBOL = {"H": "♥", "D": "♦", "C": "♣", "S": "♠"}
-    SUIT_COLOR  = {"H": "#c0392b", "D": "#c0392b", "C": "#2c3e50", "S": "#2c3e50"}
+    # SUIT_SYMBOL = {"H": "♥", "D": "♦", "C": "♣", "S": "♠"}
+    # SUIT_COLOR  = {"H": "#c0392b", "D": "#c0392b", "C": "#2c3e50", "S": "#2c3e50"}
 
     def _card_html(card):
         sym = SUIT_SYMBOL[card["suit"]]
@@ -222,8 +222,14 @@ def _(game_turns, mo):
             f'{card["rank"]}{sym}</span>'
         )
 
+    _RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+    _SUITS = ['C', 'D', 'H', 'S']
+
     def _hand_html(cards):
-        return "".join(_card_html(c) for c in cards) if cards else "<em style='color:#888'>—</em>"
+        if not cards:
+            return "<em style='color:#888'>—</em>"
+        _sorted = sorted(cards, key=lambda c: (_SUITS.index(c["suit"]), _RANKS.index(c["rank"])))
+        return "".join(_card_html(c) for c in _sorted)
 
     def _table_html(melds):
         if not melds:
@@ -272,6 +278,11 @@ def _(game_turns, mo):
     </div>
     """
     mo.Html(_html)
+    return
+
+
+@app.cell
+def _():
     return
 
 
