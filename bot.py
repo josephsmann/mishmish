@@ -65,9 +65,20 @@ def find_best_play(
                 best[1] = melds + extra_melds
             return total == len(hand)  # winning move — stop early
 
+        # Deduplicate candidates by card signature (rank, suit, is_hand_card).
+        # When two candidates differ only in *which* physical copy of an identical
+        # card they use, they lead to isomorphic sub-problems; only try one.
+        tried_sigs: set = set()
         for ci in covers[target]:
             indices, meld_cards = candidates[ci]
             if indices.isdisjoint(covered):
+                sig = tuple(sorted(
+                    (pool[i]['rank'], pool[i]['suit'], i >= n_table)
+                    for i in indices
+                ))
+                if sig in tried_sigs:
+                    continue
+                tried_sigs.add(sig)
                 if bt(covered | indices, melds + [meld_cards]):
                     return True
         return False
