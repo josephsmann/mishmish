@@ -422,7 +422,7 @@ async def broadcast_lobby_state():
     for pid, ws in list(connections.items()):
         if pid not in player_games:
             await send(ws, {"type": "lobby_state", "games": games})
-    await broadcast_admin({"type": "lobby_state", "games": games})
+    await broadcast_admin({"type": "lobby_state", "games": lobby.list_games(all_statuses=True)})
 
 
 # ---------------------------------------------------------------------------
@@ -441,7 +441,7 @@ async def admin_ws(ws: WebSocket, key: str = ""):
     admin_connections.add(ws)
     try:
         # Send current state immediately on connect
-        games = lobby.list_games()
+        games = lobby.list_games(all_statuses=True)
         await send(ws, {"type": "lobby_state", "games": games})
         for game in list(lobby.games.values()):
             await send(ws, {"type": "game_state", "state": game.to_dict()})

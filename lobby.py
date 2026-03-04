@@ -17,10 +17,10 @@ class Lobby:
     def get_game(self, game_id: str) -> Optional[Game]:
         return self.games.get(game_id)
 
-    def list_games(self) -> List[Dict]:
+    def list_games(self, all_statuses: bool = False) -> List[Dict]:
         result = []
         for game in self.games.values():
-            if game.status == "waiting":
+            if all_statuses or game.status == "waiting":
                 result.append({
                     "game_id": game.game_id,
                     "status": game.status,
