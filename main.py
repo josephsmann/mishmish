@@ -189,6 +189,17 @@ async def admin_list_games(x_admin_key: str | None = Header(default=None)):
     return _json_ok({"games": games, "count": len(games)})
 
 
+@app.get("/admin/games/{game_id}")
+async def admin_get_game(game_id: str, x_admin_key: str | None = Header(default=None)):
+    """Return full game state for a live in-memory game."""
+    if not _check_admin(x_admin_key):
+        return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
+    game = lobby.get_game(game_id)
+    if game is None:
+        return _json_error("Game not found", status=404)
+    return _json_ok({"game": game.to_dict()})
+
+
 @app.delete("/admin/games/{game_id}")
 async def admin_delete_game(game_id: str, x_admin_key: str | None = Header(default=None)):
     """Delete a specific game by ID."""
