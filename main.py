@@ -53,6 +53,7 @@ lobby = Lobby()
 _bot_pool = ProcessPoolExecutor(max_workers=2)
 connections: Dict[str, WebSocket] = {}   # player_id -> WebSocket
 player_games: Dict[str, str] = {}        # player_id -> game_id
+admin_connections: set = set()           # admin WebSocket connections
 
 
 @app.get("/")
@@ -293,6 +294,13 @@ async def send(ws: WebSocket, msg: dict) -> bool:
         return False
 
 
+async def broadcast_admin(msg: dict):
+    for ws in list(admin_connections):
+        ok = await send(ws, msg)
+        if not ok:
+            admin_connections.discard(ws)
+
+
 async def broadcast_game_state(game_id: str):
     game = lobby.get_game(game_id)
     if game is None:
@@ -321,6 +329,7 @@ async def broadcast_game_state(game_id: str):
                 "broadcast_game_state: player %s has no connection (game %s, their_turn=%s)",
                 pid, game_id, pid == current_id,
             )
+    await broadcast_admin({"type": "game_state", "state": game.to_dict()})
 
 
 async def leave_waiting_game(player_id: str):
@@ -413,6 +422,39 @@ async def broadcast_lobby_state():
     for pid, ws in list(connections.items()):
         if pid not in player_games:
             await send(ws, {"type": "lobby_state", "games": games})
+    await broadcast_admin({"type": "lobby_state", "games": games})
+
+
+# ---------------------------------------------------------------------------
+# Admin WebSocket endpoint
+# ---------------------------------------------------------------------------
+
+@app.websocket("/admin/ws")
+async def admin_ws(ws: WebSocket, key: str = ""):
+    if not _check_admin(key):
+        await ws.close(code=4001, reason="Unauthorized")
+        return
+    try:
+        await ws.accept()
+    except Exception:
+        return
+    admin_connections.add(ws)
+    try:
+        # Send current state immediately on connect
+        games = lobby.list_games()
+        await send(ws, {"type": "lobby_state", "games": games})
+        for game in list(lobby.games.values()):
+            await send(ws, {"type": "game_state", "state": game.to_dict()})
+        # Keep alive — just wait for client to disconnect
+        while True:
+            try:
+                await asyncio.wait_for(ws.receive_text(), timeout=30)
+            except asyncio.TimeoutError:
+                await send(ws, {"type": "ping"})
+            except Exception:
+                break
+    finally:
+        admin_connections.discard(ws)
 
 
 # ---------------------------------------------------------------------------

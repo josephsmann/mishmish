@@ -4,6 +4,7 @@
 #     "httpx==0.28.1",
 #     "marimo>=0.20.3",
 #     "polars==1.38.1",
+#     "websockets==16.0",
 # ]
 # ///
 
@@ -15,11 +16,14 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
+    import asyncio
+    import json
     import marimo as mo
     import httpx
     import polars as pl
+    import websockets
 
-    return httpx, mo, pl
+    return asyncio, httpx, json, mo, pl, websockets
 
 
 @app.cell
@@ -31,35 +35,77 @@ def _():
 
 @app.cell(hide_code=True)
 def _(mo):
-    get_selected, set_selected = mo.state(None)  # {"game_id": str, "source": "live"|"history"}
+    get_selected, set_selected = mo.state(None)  # {"game_id": str, "source": "live"|"history", "meta": dict}
     return get_selected, set_selected
+
+
+@app.cell
+def _(mo):
+    # Live game list — updated via WebSocket push
+    get_live, set_live = mo.state([])
+    return get_live, set_live
+
+
+@app.cell
+def _(mo):
+    # Full game states — updated via WebSocket push; keyed by game_id
+    get_states, set_states = mo.state({})
+    return get_states, set_states
+
+
+@app.cell
+def _():
+    # Mutable holder so the async WS cell can cancel its own previous task
+    _holder = {"task": None}
+    return
+
+
+@app.cell(hide_code=True)
+def _(BASE_URL, HEADERS, asyncio, json, set_live, set_states, websockets):
+    _ws_url = BASE_URL.replace("https://", "wss://") + "/admin/ws"
+    _key = HEADERS["X-Admin-Key"]
+
+    async def _listen():
+        while True:
+            try:
+                async with websockets.connect(f"{_ws_url}?key={_key}") as _ws:
+                    async for _raw in _ws:
+                        _msg = json.loads(_raw)
+                        if _msg.get("type") == "lobby_state":
+                            set_live(_msg.get("games", []))
+                        elif _msg.get("type") == "game_state":
+                            _gid = _msg["state"]["game_id"]
+                            set_states(lambda s, g=_gid, d=_msg["state"]: {**s, g: d})
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                await asyncio.sleep(3)  # reconnect after 3s on error
+
+    if _holder["task"] is not None and not _holder["task"].done():
+        _holder["task"].cancel()
+
+    _holder["task"] = asyncio.ensure_future(_listen())
+    return
 
 
 @app.cell(hide_code=True)
 def _(mo):
-    refresh = mo.ui.refresh(options=["5s", "10s", "30s"], default_interval="5s")
-    refresh
-    return (refresh,)
+    history_refresh = mo.ui.run_button(label="Reload history")
+    history_refresh
+    return (history_refresh,)
 
 
 @app.cell(hide_code=True)
-def _(BASE_URL, HEADERS, httpx, refresh):
-    refresh
-    _r = httpx.get(f"{BASE_URL}/admin/games", headers=HEADERS, timeout=10)
-    live_games = _r.json().get("games", []) if _r.is_success else []
-    return (live_games,)
-
-
-@app.cell(hide_code=True)
-def _(BASE_URL, httpx, refresh):
-    refresh
+def _(BASE_URL, history_refresh, httpx):
+    history_refresh
     _r = httpx.get(f"{BASE_URL}/history/games", params={"limit": 50}, timeout=10)
     history_games = _r.json().get("games", []) if _r.is_success else []
     return (history_games,)
 
 
 @app.cell(hide_code=True)
-def _(live_games, mo, pl):
+def _(get_live, mo, pl):
+    live_games = get_live()
     if live_games:
         _df = pl.DataFrame({
             "game_id": [g["game_id"] for g in live_games],
@@ -69,7 +115,7 @@ def _(live_games, mo, pl):
         live_table = mo.ui.table(_df, selection="single")
     else:
         live_table = mo.md("_No active games_")
-    return (live_table,)
+    return live_games, live_table
 
 
 @app.cell(hide_code=True)
@@ -117,16 +163,17 @@ def _(history_games, history_table, live_games, live_table, set_selected):
 
 
 @app.cell(hide_code=True)
-def _(BASE_URL, HEADERS, get_selected, httpx):
+def _(BASE_URL, get_selected, get_states, httpx):
     _sel = get_selected()
     game_detail = None
     if _sel is not None:
         if _sel["source"] == "live":
-            _r = httpx.get(f"{BASE_URL}/admin/games/{_sel['game_id']}", headers=HEADERS, timeout=10)
+            # Use WebSocket-pushed state — no HTTP needed
+            game_detail = get_states().get(_sel["game_id"])
         else:
             _r = httpx.get(f"{BASE_URL}/history/games/{_sel['game_id']}", timeout=10)
-        if _r.is_success:
-            game_detail = _r.json().get("game")
+            if _r.is_success:
+                game_detail = _r.json().get("game")
     return (game_detail,)
 
 
@@ -209,9 +256,6 @@ def _(BASE_URL, get_selected, httpx):
 def _(SUIT_COLOR, SUIT_SYMBOL, game_turns, mo):
     mo.stop(not game_turns, mo.md("_No turn history recorded for this game._"))
 
-    # SUIT_SYMBOL = {"H": "♥", "D": "♦", "C": "♣", "S": "♠"}
-    # SUIT_COLOR  = {"H": "#c0392b", "D": "#c0392b", "C": "#2c3e50", "S": "#2c3e50"}
-
     def _card_html(card):
         sym = SUIT_SYMBOL[card["suit"]]
         col = SUIT_COLOR[card["suit"]]
@@ -228,7 +272,7 @@ def _(SUIT_COLOR, SUIT_SYMBOL, game_turns, mo):
     def _hand_html(cards):
         if not cards:
             return "<em style='color:#888'>—</em>"
-        _sorted = sorted(cards, key=lambda c: (_SUITS.index(c["suit"]), _RANKS.index(c["rank"])))
+        _sorted = sorted(cards, key=lambda c: (_RANKS.index(c["rank"]), _SUITS.index(c["suit"])))
         return "".join(_card_html(c) for c in _sorted)
 
     def _table_html(melds):
@@ -278,11 +322,6 @@ def _(SUIT_COLOR, SUIT_SYMBOL, game_turns, mo):
     </div>
     """
     mo.Html(_html)
-    return
-
-
-@app.cell
-def _():
     return
 
 
