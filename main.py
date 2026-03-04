@@ -431,12 +431,12 @@ async def broadcast_lobby_state():
 
 @app.websocket("/admin/ws")
 async def admin_ws(ws: WebSocket, key: str = ""):
-    if not _check_admin(key):
-        await ws.close(code=4001, reason="Unauthorized")
-        return
     try:
         await ws.accept()
     except Exception:
+        return
+    if not _check_admin(key):
+        await ws.close(code=4001, reason="Unauthorized")
         return
     admin_connections.add(ws)
     try:

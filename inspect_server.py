@@ -80,7 +80,7 @@ def _(
     async def _listen():
         while True:
             try:
-                async with websockets.connect(f"{_ws_url}?key={_key}") as _ws:
+                async with websockets.connect(f"{_ws_url}?key={_key}", open_timeout=30) as _ws:
                     set_ws_error(None)
                     async for _raw in _ws:
                         _msg = json.loads(_raw)
