@@ -270,7 +270,8 @@ def _(game_detail, mo):
 
 
 @app.cell(hide_code=True)
-def _(BASE_URL, get_selected, httpx):
+def _(BASE_URL, game_detail, get_selected, httpx):
+    game_detail
     _sel = get_selected()
     game_turns = []
     if _sel is not None:
