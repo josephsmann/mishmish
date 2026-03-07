@@ -43,7 +43,7 @@
           <input id="reg-password" type="password" placeholder="Password (min 6 chars)" autocomplete="new-password" />
         </div>
         <div class="auth-field">
-          <input id="reg-phone" type="tel" placeholder="Phone number (optional, for password reset)" autocomplete="tel" />
+          <input id="reg-phone" type="tel" placeholder="Phone number (required)" autocomplete="tel" required />
         </div>
         <div id="reg-error" class="auth-error"></div>
         <button onclick="doRegister()">Create Account</button>
@@ -106,6 +106,7 @@
       <div class="lobby-actions">
         <button id="btn-play-bot" onclick="playVsBot()">Play vs Bot</button>
         <button id="btn-create" onclick="createGame()">Create Game</button>
+        <button id="btn-ready" onclick="showAvailabilityPanel()" style="display:none;background:#1b5e20;color:#fff">I'm Ready to Play</button>
       </div>
       <h2>Open Games</h2>
       <div id="game-list">
@@ -189,16 +190,6 @@
         <button id="btn-sync" onclick="syncState()" title="Resync with server">↺</button>
       </div>
 
-      <!-- Abort confirmation overlay -->
-      <div id="abort-confirm" class="winner-overlay" style="display:none">
-        <div class="winner-box">
-          <div class="winner-message" style="font-size:1.2rem;color:#f0f0f0">Abort the game?<br><span style="font-size:0.9rem;color:#9dbf9d;font-weight:400">All players will return to the lobby.</span></div>
-          <div style="display:flex;gap:12px;justify-content:center;margin-top:4px">
-            <button onclick="confirmAbort()" style="background:#c0392b;color:#fff">Yes, abort</button>
-            <button onclick="hideAbortConfirm()">Cancel</button>
-          </div>
-        </div>
-      </div>
 
       <!-- Winner overlay — shown on top of board when game ends -->
       <div id="winner-overlay" class="winner-overlay" style="display:none">
@@ -208,6 +199,38 @@
         </div>
       </div>
 
+    </div>
+  </div>
+
+  <!-- Abort confirmation overlay — lives at body level so it works from any view -->
+  <div id="abort-confirm" class="winner-overlay" style="display:none">
+    <div class="winner-box">
+      <div class="winner-message" style="font-size:1.2rem;color:#f0f0f0">Abort the game?<br><span style="font-size:0.9rem;color:#9dbf9d;font-weight:400">All players will return to the lobby.</span></div>
+      <div style="display:flex;gap:12px;justify-content:center;margin-top:4px">
+        <button onclick="confirmAbort()" style="background:#c0392b;color:#fff">Yes, abort</button>
+        <button onclick="hideAbortConfirm()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Availability panel — slide-up sheet for registered users in the lobby -->
+  <div id="availability-panel" class="winner-overlay" style="display:none">
+    <div class="winner-box" style="max-width:360px;width:90%">
+      <div class="winner-message" style="font-size:1.1rem;color:#f0f0f0;margin-bottom:8px">Let friends know you're ready</div>
+      <div style="text-align:left;margin-bottom:12px">
+        <label style="color:#ccc;font-size:0.9rem">Available for (minutes)</label>
+        <input id="avail-timeout" type="number" min="5" max="1440" value="30"
+          style="width:100%;margin-top:4px;padding:6px;background:#2a3a2a;border:1px solid #4a7a4a;color:#f0f0f0;border-radius:6px;font-size:1rem" />
+      </div>
+      <div style="text-align:left;margin-bottom:16px">
+        <label style="color:#ccc;font-size:0.9rem">Notify</label>
+        <div id="avail-recipients" style="margin-top:6px;max-height:180px;overflow-y:auto"></div>
+      </div>
+      <div id="avail-error" style="color:#e57373;font-size:0.85rem;margin-bottom:8px;display:none"></div>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button id="btn-avail-send" onclick="submitAvailability()" style="background:#2e7d32;color:#fff">Notify &amp; Mark Ready</button>
+        <button onclick="hideAvailabilityPanel()">Cancel</button>
+      </div>
     </div>
   </div>
 

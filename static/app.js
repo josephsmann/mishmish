@@ -212,7 +212,7 @@ async function doRegister() {
   const phone = document.getElementById("reg-phone").value.trim();
   const errEl = document.getElementById("reg-error");
   errEl.textContent = "";
-  if (!username || !password) { errEl.textContent = "Fill in all fields"; return; }
+  if (!username || !password || !phone) { errEl.textContent = "Phone number is required"; return; }
   try {
     const res = await fetch("/auth/register", {
       method: "POST",
@@ -320,15 +320,19 @@ function signOut() {
 function renderIdentityBar() {
   const label = document.getElementById("identity-label");
   const btn = document.getElementById("btn-sign-out");
+  const btnReady = document.getElementById("btn-ready");
   if (authUsername) {
     label.textContent = `Signed in as ${authUsername}`;
     btn.style.display = "inline-block";
+    if (btnReady) btnReady.style.display = "inline-block";
   } else if (playerName) {
     label.textContent = `Playing as ${playerName} (guest)`;
     btn.style.display = "none";
+    if (btnReady) btnReady.style.display = "none";
   } else {
     label.textContent = "";
     btn.style.display = "none";
+    if (btnReady) btnReady.style.display = "none";
   }
 }
 
@@ -975,6 +979,68 @@ function escHtml(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// ---- Availability ----
+let _availUsers = [];
+
+async function showAvailabilityPanel() {
+  const errEl = document.getElementById("avail-error");
+  errEl.style.display = "none";
+  // Fetch user list
+  try {
+    const res = await fetch("/users", { headers: { "Authorization": `Bearer ${authToken}` } });
+    const data = await res.json();
+    _availUsers = data.users || [];
+  } catch (e) {
+    _availUsers = [];
+  }
+  const recDiv = document.getElementById("avail-recipients");
+  if (_availUsers.length === 0) {
+    recDiv.innerHTML = '<p style="color:#9dbf9d;font-size:0.85rem;margin:0">No other registered players found.</p>';
+  } else {
+    recDiv.innerHTML = _availUsers.map(u =>
+      `<label style="display:flex;align-items:center;gap:8px;color:#e0e0e0;font-size:0.95rem;margin-bottom:4px;cursor:pointer">
+        <input type="checkbox" class="avail-user-check" value="${escHtml(u.id)}" ${u.id !== playerId ? "checked" : "disabled style='opacity:0.3'"} />
+        ${escHtml(u.username)}
+      </label>`
+    ).join("");
+  }
+  document.getElementById("availability-panel").style.display = "flex";
+}
+
+function hideAvailabilityPanel() {
+  document.getElementById("availability-panel").style.display = "none";
+}
+
+async function submitAvailability() {
+  const errEl = document.getElementById("avail-error");
+  errEl.style.display = "none";
+  const timeout = parseInt(document.getElementById("avail-timeout").value, 10) || 30;
+  const checked = [...document.querySelectorAll(".avail-user-check:checked")].map(el => el.value);
+  const btn = document.getElementById("btn-avail-send");
+  btn.disabled = true;
+  try {
+    const res = await fetch("/availability", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}` },
+      body: JSON.stringify({ timeout_minutes: timeout, notify: checked }),
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      errEl.textContent = data.error || "Something went wrong";
+      errEl.style.display = "block";
+      btn.disabled = false;
+      return;
+    }
+    hideAvailabilityPanel();
+    const notified = data.notified ?? 0;
+    showError(notified > 0 ? `Notified ${notified} player(s) via SMS!` : "Marked as ready (no SMS sent).");
+  } catch (e) {
+    errEl.textContent = "Network error, try again";
+    errEl.style.display = "block";
+  }
+  btn.disabled = false;
 }
 
 // ---- Init ----
