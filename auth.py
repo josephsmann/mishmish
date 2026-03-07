@@ -52,6 +52,19 @@ async def init_db():
                 used        INTEGER DEFAULT 0
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS user_availability (
+                user_id       TEXT PRIMARY KEY,
+                available_until TEXT NOT NULL,
+                created_at    TEXT NOT NULL
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS notify_list_defaults (
+                user_id       TEXT PRIMARY KEY,
+                recipient_ids TEXT NOT NULL
+            )
+        """)
         await db.commit()
 
 
