@@ -52,6 +52,19 @@ async def init_db():
                 used        INTEGER DEFAULT 0
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS user_availability (
+                user_id       TEXT PRIMARY KEY,
+                available_until TEXT NOT NULL,
+                created_at    TEXT NOT NULL
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS notify_list_defaults (
+                user_id       TEXT PRIMARY KEY,
+                recipient_ids TEXT NOT NULL
+            )
+        """)
         await db.commit()
 
 
@@ -237,4 +250,113 @@ async def send_reset_sms(phone: str, reset_token: str):
     await loop.run_in_executor(
         None,
         lambda: client.messages.create(to=phone, from_=from_number, body=body),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Availability
+# ---------------------------------------------------------------------------
+
+async def set_availability(user_id: str, available_until: str) -> None:
+    """Upsert availability for a user."""
+    created_at = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO user_availability (user_id, available_until, created_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                available_until = excluded.available_until,
+                created_at = excluded.created_at
+            """,
+            (user_id, available_until, created_at),
+        )
+        await db.commit()
+
+
+async def get_availability(user_id: str) -> Optional[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM user_availability WHERE user_id = ?", (user_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def clear_availability(user_id: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM user_availability WHERE user_id = ?", (user_id,)
+        )
+        await db.commit()
+
+
+async def clear_expired_availability() -> None:
+    """Delete all availability rows where available_until is in the past."""
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM user_availability WHERE available_until < ?", (now,)
+        )
+        await db.commit()
+
+
+async def save_notify_default(user_id: str, recipient_ids: list) -> None:
+    import json as _json
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO notify_list_defaults (user_id, recipient_ids)
+            VALUES (?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET recipient_ids = excluded.recipient_ids
+            """,
+            (user_id, _json.dumps(recipient_ids)),
+        )
+        await db.commit()
+
+
+async def get_notify_default(user_id: str) -> Optional[list]:
+    import json as _json
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT recipient_ids FROM notify_list_defaults WHERE user_id = ?",
+            (user_id,),
+        ) as cur:
+            row = await cur.fetchone()
+    return _json.loads(row["recipient_ids"]) if row else None
+
+
+async def get_users_with_phones() -> list:
+    """Return all users who have a phone number: [{id, username}]."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT id, username FROM users WHERE phone IS NOT NULL AND phone != ''"
+        ) as cur:
+            rows = await cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def send_availability_sms(to_number: str, from_username: str) -> None:
+    """Send an availability notification via Twilio SMS.
+    Logs a warning and returns silently if TWILIO_FROM_NUMBER is not set."""
+    import logging
+    from_number = os.environ.get("TWILIO_FROM_NUMBER")
+    if not from_number:
+        logging.getLogger("auth").warning(
+            f"TWILIO_FROM_NUMBER not set — skipping availability SMS to {to_number}"
+        )
+        return
+
+    link = f"{APP_BASE_URL}?ready={from_username}"
+    body = f"{from_username} is ready to play Mish Mish! Join them: {link}"
+
+    client = _twilio_client()
+    import asyncio
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(
+        None,
+        lambda: client.messages.create(to=to_number, from_=from_number, body=body),
     )

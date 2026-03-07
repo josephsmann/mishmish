@@ -89,7 +89,9 @@ async def register(request: Request):
     if len(password) < 6:
         return _json_error("Password must be at least 6 characters")
 
-    phone = auth.normalize_phone(phone_raw) if phone_raw else None
+    if not phone_raw:
+        return _json_error("Phone number is required")
+    phone = auth.normalize_phone(phone_raw)
 
     try:
         user = await auth.create_user(username, password, phone)
@@ -169,6 +171,88 @@ async def history_player_games(player_id: str, limit: int = 20, offset: int = 0)
     limit = min(limit, 100)
     games = await db.get_games_for_player(player_id=player_id, limit=limit, offset=offset)
     return _json_ok({"games": games})
+
+
+# ---------------------------------------------------------------------------
+# Availability endpoints
+# ---------------------------------------------------------------------------
+
+async def _get_current_user(request: Request):
+    """Extract and validate JWT from Authorization: Bearer <token> header."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    token = auth_header[7:]
+    payload = auth.decode_token(token)
+    if not payload:
+        return None
+    return await auth.get_user_by_id(payload["sub"])
+
+
+@app.post("/availability")
+async def set_availability(request: Request):
+    user = await _get_current_user(request)
+    if not user:
+        return _json_error("Unauthorized", status=401)
+    if not user.get("phone"):
+        return _json_error("Add a phone number to use this feature")
+    if user["id"] in player_games:
+        game_id = player_games[user["id"]]
+        game = lobby.get_game(game_id)
+        if game and game.status in ("waiting", "playing"):
+            return _json_error("You're already in a game")
+
+    body = await request.json()
+    timeout_minutes = int(body.get("timeout_minutes") or 30)
+    timeout_minutes = max(1, min(timeout_minutes, 1440))
+    notify = body.get("notify") or []
+
+    from datetime import datetime, timezone, timedelta
+    available_until = (
+        datetime.now(timezone.utc) + timedelta(minutes=timeout_minutes)
+    ).isoformat()
+    await auth.set_availability(user["id"], available_until)
+    await auth.save_notify_default(user["id"], notify)
+
+    if notify == ["all"]:
+        recipients = await auth.get_users_with_phones()
+        recipients = [r for r in recipients if r["id"] != user["id"]]
+    else:
+        recipients = []
+        for uid in notify:
+            r = await auth.get_user_by_id(uid)
+            if r and r.get("phone") and r["id"] != user["id"]:
+                recipients.append(r)
+
+    for recipient in recipients:
+        try:
+            await auth.send_availability_sms(
+                to_number=recipient["phone"],
+                from_username=user["username"],
+            )
+        except Exception as e:
+            log.warning(f"SMS to {recipient['id']} failed: {e}")
+
+    return _json_ok({"available_until": available_until, "notified": len(recipients)})
+
+
+@app.delete("/availability")
+async def clear_availability(request: Request):
+    user = await _get_current_user(request)
+    if not user:
+        return _json_error("Unauthorized", status=401)
+    await auth.clear_availability(user["id"])
+    return _json_ok({"cleared": True})
+
+
+@app.get("/users")
+async def list_users(request: Request):
+    """Return all registered users with phone numbers (id + username only)."""
+    user = await _get_current_user(request)
+    if not user:
+        return _json_error("Unauthorized", status=401)
+    users = await auth.get_users_with_phones()
+    return _json_ok({"users": [{"id": u["id"], "username": u["username"]} for u in users]})
 
 
 # ---------------------------------------------------------------------------
