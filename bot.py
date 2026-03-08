@@ -1,12 +1,10 @@
 from collections import defaultdict
 from itertools import combinations, product as iproduct
-from typing import List, Optional, FrozenSet
+from typing import List, Optional
 
 from deck import Card, RANKS, is_valid_set
 
 _N_RANKS = len(RANKS)
-
-
 def find_best_play(
     hand: List[Card],
     table: List[List[Card]],
@@ -18,8 +16,10 @@ def find_best_play(
     Pool indices 0..n_table-1 are table cards (must all be covered);
     n_table..end are hand cards (optional, maximise coverage).
 
-    Uses exact-cover backtracking with the MRV heuristic (most-constrained
-    table card first) to prune the search tree aggressively.
+    Uses exact-cover backtracking with:
+    - MRV heuristic (most-constrained table card first)
+    - Bitmask representation for O(1) cover/uncover operations
+    - Precomputed candidate signatures to skip isomorphic branches
     """
     table_cards = [card for meld in table for card in meld]
     n_table = len(table_cards)
@@ -31,6 +31,23 @@ def find_best_play(
 
     candidates = _build_candidates(pool)
 
+    # Pre-compute per-candidate bitmasks, card lists, and signatures.
+    # Signatures deduplicate branches that differ only in which physical copy
+    # of an identical card is used — they lead to isomorphic sub-problems.
+    cand_masks: List[int] = []
+    cand_cards: List[list] = []
+    cand_sigs: List[tuple] = []
+    for indices, meld_cards in candidates:
+        mask = 0
+        for i in indices:
+            mask |= 1 << i
+        cand_masks.append(mask)
+        cand_cards.append(meld_cards)
+        cand_sigs.append(tuple(sorted(
+            (pool[i]['rank'], pool[i]['suit'], i >= n_table)
+            for i in indices
+        )))
+
     # covers[i] = list of candidate indices whose meld contains pool[i]
     covers: List[List[int]] = [[] for _ in range(n_pool)]
     for ci, (indices, _) in enumerate(candidates):
@@ -39,25 +56,29 @@ def find_best_play(
 
     best = [0, list(table)]  # [hand_cards_played, resulting_table]
 
-    def bt(covered: FrozenSet[int], melds: list) -> bool:
-        # MRV: among uncovered table cards, pick the one with fewest valid candidates.
-        # This is the "most constrained variable" heuristic — fail fast on dead branches.
+    def bt(covered: int, melds: list) -> bool:
+        # MRV: among uncovered table cards, pick the one with fewest valid
+        # candidates. This is the "most constrained variable" heuristic —
+        # fail fast on dead branches.
         best_count = None
-        target = None
+        target = -1
         for i in range(n_table):
-            if i in covered:
+            if (covered >> i) & 1:
                 continue
-            cnt = sum(1 for ci in covers[i] if candidates[ci][0].isdisjoint(covered))
+            cnt = sum(1 for ci in covers[i] if (cand_masks[ci] & covered) == 0)
             if cnt == 0:
-                return False  # This card can never be covered — prune immediately
+                return False  # card can never be covered — prune immediately
             if best_count is None or cnt < best_count:
                 best_count = cnt
                 target = i
 
-        if target is None:
+        if target == -1:
             # All table cards covered — pack remaining hand cards into new melds.
-            unused_hand = [i for i in range(n_table, n_pool) if i not in covered]
-            hand_in_melds = sum(1 for i in range(n_table, n_pool) if i in covered)
+            hand_in_melds = bin(covered >> n_table).count('1')
+            unused_hand = [
+                n_table + j for j in range(len(hand))
+                if not ((covered >> (n_table + j)) & 1)
+            ]
             extra_used, extra_melds = _pack_hand(pool, unused_hand, candidates)
             total = hand_in_melds + len(extra_used)
             if total > best[0]:
@@ -65,25 +86,18 @@ def find_best_play(
                 best[1] = melds + extra_melds
             return total == len(hand)  # winning move — stop early
 
-        # Deduplicate candidates by card signature (rank, suit, is_hand_card).
-        # When two candidates differ only in *which* physical copy of an identical
-        # card they use, they lead to isomorphic sub-problems; only try one.
         tried_sigs: set = set()
         for ci in covers[target]:
-            indices, meld_cards = candidates[ci]
-            if indices.isdisjoint(covered):
-                sig = tuple(sorted(
-                    (pool[i]['rank'], pool[i]['suit'], i >= n_table)
-                    for i in indices
-                ))
+            if (cand_masks[ci] & covered) == 0:
+                sig = cand_sigs[ci]
                 if sig in tried_sigs:
                     continue
                 tried_sigs.add(sig)
-                if bt(covered | indices, melds + [meld_cards]):
+                if bt(covered | cand_masks[ci], melds + [cand_cards[ci]]):
                     return True
         return False
 
-    bt(frozenset(), [])
+    bt(0, [])
 
     return None if best[0] == 0 else best[1]
 
@@ -160,6 +174,9 @@ def _pack_hand(pool: List[Card], unused_hand: List[int], all_candidates):
     """
     Find the maximum-weight non-overlapping set of melds formable purely
     from `unused_hand` indices, using the pre-built candidate list.
+
+    Branch-and-bound: precomputes an upper bound (sum of remaining meld sizes,
+    ignoring overlaps) and prunes any branch that cannot beat the current best.
     """
     if len(unused_hand) < 3:
         return frozenset(), []
@@ -171,15 +188,30 @@ def _pack_hand(pool: List[Card], unused_hand: List[int], all_candidates):
         return frozenset(), []
 
     relevant.sort(key=lambda x: len(x[0]), reverse=True)
+
+    # Precompute upper bound: max cards reachable from position i onward.
+    # This ignores card overlaps so it safely overestimates — valid for pruning.
+    max_from = [0] * (len(relevant) + 1)
+    for i in range(len(relevant) - 1, -1, -1):
+        max_from[i] = max_from[i + 1] + len(relevant[i][0])
+
     best: list = [frozenset(), []]
 
-    def _bt(i: int, used: FrozenSet[int], cur_melds: list) -> None:
-        if len(used) > len(best[0]):
+    def _bt(i: int, used: frozenset, cur_melds: list) -> None:
+        cur = len(used)
+        if cur > len(best[0]):
             best[0] = used
             best[1] = cur_melds[:]
-        if i >= len(relevant) or len(best[0]) == len(unused_hand):
+        if cur == len(unused_hand) or i >= len(relevant):
+            return
+        # Prune: even taking every remaining card can't beat current best
+        if cur + max_from[i] <= len(best[0]):
             return
         for j in range(i, len(relevant)):
+            # Since relevant is sorted descending, max_from[j] only shrinks —
+            # once we can't beat best, no later candidate can either.
+            if cur + max_from[j] <= len(best[0]):
+                break
             indices, cards = relevant[j]
             if indices.isdisjoint(used):
                 _bt(j + 1, used | indices, cur_melds + [cards])

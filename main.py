@@ -54,6 +54,9 @@ _bot_pool = ProcessPoolExecutor(max_workers=2)
 connections: Dict[str, WebSocket] = {}   # player_id -> WebSocket
 player_games: Dict[str, str] = {}        # player_id -> game_id
 admin_connections: set = set()           # admin WebSocket connections
+# Per-game cache of the last bot (hand_key, table_key) that returned None.
+# If state is identical on the next turn, skip the search and draw immediately.
+_bot_last_draw_state: Dict[str, tuple] = {}  # game_id -> (hand_key, table_key)
 
 
 @app.get("/")
@@ -439,6 +442,7 @@ async def cleanup_ended_game(game_id: str):
     if game and game.status == "ended":
         for p in game.players:
             player_games.pop(p['id'], None)
+        _bot_last_draw_state.pop(game_id, None)
         lobby.remove_game(game_id)
         try:
             await db.record_game_end(game, "ended")
@@ -478,18 +482,40 @@ async def trigger_bot_if_needed(game_id: str):
     if current is None or current['id'] != bot_id:
         return
 
+    # Trivial optimisation: if the table and bot's hand are identical to the
+    # last turn where the bot drew, there is nothing new to consider — draw again.
+    hand_key = tuple(sorted((c['rank'], c['suit']) for c in current['hand']))
+    table_key = tuple(sorted((c['rank'], c['suit']) for meld in game.table for c in meld))
+    state_key = (hand_key, table_key)
+    if _bot_last_draw_state.get(game_id) == state_key:
+        log.info("bot draw_card (no change): bot=%s game=%s", bot_id, game_id)
+        game.draw_card(bot_id)
+        await record_turn(game, current['name'], "draw")
+        await broadcast_game_state(game_id)
+        await cleanup_ended_game(game_id)
+        await trigger_bot_if_needed(game_id)
+        return
+
     loop = asyncio.get_event_loop()
-    new_table = await loop.run_in_executor(
-        _bot_pool, find_best_play, current['hand'], game.table
-    )
+    try:
+        new_table = await asyncio.wait_for(
+            loop.run_in_executor(_bot_pool, find_best_play, current['hand'], game.table),
+            timeout=10.0,
+        )
+    except asyncio.TimeoutError:
+        log.warning("bot timed out, drawing: bot=%s game=%s", bot_id, game_id)
+        new_table = None
     if new_table is None:
         log.info("bot draw_card: bot=%s game=%s", bot_id, game_id)
+        _bot_last_draw_state[game_id] = state_key
         game.draw_card(bot_id)
         await record_turn(game, current['name'], "draw")
     else:
+        _bot_last_draw_state.pop(game_id, None)
         ok, _ = game.play_turn(bot_id, new_table)
         if not ok:
             log.warning("bot play_turn failed, drawing: bot=%s game=%s", bot_id, game_id)
+            _bot_last_draw_state[game_id] = state_key
             game.draw_card(bot_id)
             await record_turn(game, current['name'], "draw")
         else:
