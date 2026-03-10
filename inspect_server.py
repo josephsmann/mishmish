@@ -398,10 +398,18 @@ def _(SUIT_COLOR, SUIT_SYMBOL, game_turns, mo):
             return "<em style='color:#888'>—</em>"
         return " | ".join("".join(_card_html(c) for c in m) for m in melds)
 
+    from datetime import datetime, timezone
+
     _player_names = sorted({t["player_name"] for t in game_turns})
 
+    def _parse_ts(s):
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+    _timestamps = [_parse_ts(t["created_at"]) for t in game_turns]
+
     _rows = []
-    for _t in game_turns:
+    for _i, _t in enumerate(game_turns):
+        _duration = round((_timestamps[_i] - _timestamps[_i - 1]).total_seconds(), 1) if _i > 0 else 0.0
         _action_badge = (
             '<span style="background:#4caf50;color:#fff;border-radius:3px;padding:1px 5px;font-size:0.8em">play</span>'
             if _t["action"] == "play" else
@@ -414,6 +422,7 @@ def _(SUIT_COLOR, SUIT_SYMBOL, game_turns, mo):
         _rows.append(
             f'<tr>'
             f'<td style="padding:4px 8px;border-bottom:1px solid #333;color:#aaa;white-space:nowrap">{_t["turn_number"]}</td>'
+            f'<td style="padding:4px 8px;border-bottom:1px solid #333;color:#aaa;white-space:nowrap">{_duration}s</td>'
             f'<td style="padding:4px 8px;border-bottom:1px solid #333">{_t["player_name"]} {_action_badge}</td>'
             f'{_player_cells}'
             f'<td style="padding:4px 8px;border-bottom:1px solid #333;vertical-align:top">{_table_html(_t["table"])}</td>'
@@ -430,6 +439,7 @@ def _(SUIT_COLOR, SUIT_SYMBOL, game_turns, mo):
       <thead>
         <tr>
           <th style="padding:4px 8px;text-align:left;border-bottom:2px solid #555">#</th>
+          <th style="padding:4px 8px;text-align:left;border-bottom:2px solid #555">t (s)</th>
           <th style="padding:4px 8px;text-align:left;border-bottom:2px solid #555">Action</th>
           {_header_cells}
           <th style="padding:4px 8px;text-align:left;border-bottom:2px solid #555">Table</th>
