@@ -4,13 +4,14 @@
 #     "httpx==0.28.1",
 #     "marimo>=0.20.3",
 #     "polars==1.38.1",
+#     "pydantic-ai==1.67.0",
 #     "websockets==16.0",
 # ]
 # ///
 
 import marimo
 
-__generated_with = "0.20.3"
+__generated_with = "0.20.4"
 app = marimo.App(width="medium")
 
 
@@ -29,7 +30,9 @@ def _():
 @app.cell
 def _():
     BASE_URL = "https://mishmish-game.fly.dev"
-    HEADERS = {"X-Admin-Key": "REDACTED"}
+    import os
+
+    HEADERS = {"X-Admin-Key": os.environ["ADMIN_KEY"]}
     return BASE_URL, HEADERS
 
 
@@ -126,12 +129,15 @@ def _(mo):
 @app.cell
 def _(BASE_URL, history_refresh, httpx):
     history_refresh
-    _r = httpx.get(f"{BASE_URL}/history/games", params={"limit": 50}, timeout=10)
-    history_games = _r.json().get("games", []) if _r.is_success else []
+    try:
+        _r = httpx.get(f"{BASE_URL}/history/games", params={"limit": 50}, timeout=10)
+        history_games = _r.json().get("games", []) if _r.is_success else []
+    except httpx.TimeoutException:
+        history_games = []
     return (history_games,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(get_live, mo, pl):
     live_games = get_live()
     if live_games:
@@ -146,7 +152,7 @@ def _(get_live, mo, pl):
     return live_games, live_table
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(history_games, mo, pl):
     if history_games:
         _df = pl.DataFrame({
@@ -167,11 +173,70 @@ def _(history_games, mo, pl):
 
 
 @app.cell
-def _(history_table, live_table, mo):
+def _(mo):
+    manage_filter = mo.ui.text(placeholder="filter by player…", label="Filter")
+    return (manage_filter,)
+
+
+@app.cell
+def _(get_live, manage_filter, mo, pl):
+    _live = get_live()
+    _q = manage_filter.value.strip().lower()
+    _filtered = [g for g in _live if not _q or _q in ", ".join(g["players"]).lower()]
+    if _filtered:
+        _df = pl.DataFrame({
+            "game_id": [g["game_id"] for g in _filtered],
+            "status":  [g["status"] for g in _filtered],
+            "players": [", ".join(g["players"]) for g in _filtered],
+        })
+        manage_table = mo.ui.table(_df, selection="multi")
+    else:
+        manage_table = mo.ui.table(
+            pl.DataFrame({"game_id": [], "status": [], "players": []}),
+            selection="multi",
+        )
+    return (manage_table,)
+
+
+@app.cell
+def _(mo):
+    delete_selected_btn = mo.ui.run_button(label="Delete selected", kind="danger")
+    return (delete_selected_btn,)
+
+
+@app.cell
+def _(
+    delete_selected_btn,
+    history_table,
+    live_table,
+    manage_filter,
+    manage_table,
+    mo,
+):
     mo.ui.tabs({
         "🟢 Live games": live_table,
         "📜 History":    history_table,
+        "🗑 Manage":     mo.vstack([manage_filter, manage_table, delete_selected_btn]),
     })
+    return
+
+
+@app.cell
+def _(BASE_URL, HEADERS, delete_selected_btn, httpx, manage_table, mo):
+    mo.stop(
+        not delete_selected_btn.value
+        or manage_table.value is None
+        or len(manage_table.value) == 0
+    )
+    _ids = manage_table.value["game_id"].to_list()
+    _lines = []
+    for _gid in _ids:
+        try:
+            _r = httpx.delete(f"{BASE_URL}/admin/games/{_gid}", headers=HEADERS, timeout=10)
+            _lines.append(f"✅ `{_gid[:8]}…`" if _r.is_success else f"❌ `{_gid[:8]}…` ({_r.status_code})")
+        except httpx.TimeoutException:
+            _lines.append(f"⏱ `{_gid[:8]}…` timed out")
+    mo.md("  \n".join(_lines))
     return
 
 
@@ -199,9 +264,12 @@ def _(BASE_URL, get_selected, get_states, httpx):
             # Use WebSocket-pushed state — no HTTP needed
             game_detail = get_states().get(_sel["game_id"])
         else:
-            _r = httpx.get(f"{BASE_URL}/history/games/{_sel['game_id']}", timeout=10)
-            if _r.is_success:
-                game_detail = _r.json().get("game")
+            try:
+                _r = httpx.get(f"{BASE_URL}/history/games/{_sel['game_id']}", timeout=10)
+                if _r.is_success:
+                    game_detail = _r.json().get("game")
+            except httpx.TimeoutException:
+                pass
     return (game_detail,)
 
 
@@ -228,6 +296,27 @@ def _(game_detail, get_selected, mo):
     | Started | {(_g.get("started_at") or "—")[:19]} |
     | Ended | {(_g.get("ended_at") or "—")[:19]} |
     """)
+    return
+
+
+@app.cell
+def _(get_selected, mo):
+    _sel = get_selected()
+    delete_button = mo.ui.run_button(label="Delete game", kind="danger")
+    delete_button if (_sel is not None and _sel["source"] == "live") else mo.md("")
+    return (delete_button,)
+
+
+@app.cell
+def _(BASE_URL, HEADERS, delete_button, get_selected, httpx, mo):
+    mo.stop(not delete_button.value)
+    _sel = get_selected()
+    try:
+        _r = httpx.delete(f"{BASE_URL}/admin/games/{_sel['game_id']}", headers=HEADERS, timeout=10)
+        _result = mo.md("✅ Game deleted.") if _r.is_success else mo.md(f"❌ Delete failed: {_r.status_code}")
+    except httpx.TimeoutException:
+        _result = mo.md("❌ Request timed out.")
+    _result
     return
 
 
