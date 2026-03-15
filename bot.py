@@ -5,7 +5,9 @@ from typing import List, Optional
 from deck import Card, RANKS, is_valid_set
 
 _N_RANKS = len(RANKS)
-def find_best_play(
+
+
+def _find_best_play_v1(
     hand: List[Card],
     table: List[List[Card]],
 ) -> Optional[List[List[Card]]]:
@@ -218,3 +220,138 @@ def _pack_hand(pool: List[Card], unused_hand: List[int], all_candidates):
 
     _bt(0, frozenset(), [])
     return best[0], best[1]
+
+
+# ── V2: opportunity-aware scoring ─────────────────────────────────────────────
+
+_LAMBDA = 0.5  # blocking weight: cards_played − λ × new_table_opportunities
+
+
+def _find_best_play_v2(
+    hand: List[Card],
+    table: List[List[Card]],
+    lam: float = _LAMBDA,
+) -> Optional[List[List[Card]]]:
+    """
+    Score-based bot: picks the play that maximises
+        cards_played_from_hand − λ × new_meld_opportunities(new_table)
+
+    "new_meld_opportunities" = number of distinct valid melds formable
+    from the new table's cards alone (computed via _build_candidates).
+    This penalises plays that enrich the shared table for the opponent.
+
+    Falls back to drawing if every play scores ≤ 0.
+    """
+    if not hand:
+        return None
+
+    table_cards = [card for meld in table for card in meld]
+    n_table = len(table_cards)
+    pool = table_cards + hand
+    n_pool = len(pool)
+
+    candidates = _build_candidates(pool)
+
+    cand_masks: List[int] = []
+    cand_cards: List[list] = []
+    cand_sigs: List[tuple] = []
+    for indices, meld_cards in candidates:
+        mask = 0
+        for i in indices:
+            mask |= 1 << i
+        cand_masks.append(mask)
+        cand_cards.append(meld_cards)
+        cand_sigs.append(tuple(sorted(
+            (pool[i]['rank'], pool[i]['suit'], i >= n_table)
+            for i in indices
+        )))
+
+    covers: List[List[int]] = [[] for _ in range(n_pool)]
+    for ci, (indices, _) in enumerate(candidates):
+        for idx in indices:
+            covers[idx].append(ci)
+
+    # best = [score, table_state]; -inf ensures any valid play wins
+    best = [float('-inf'), None]
+
+    # hand_mask: bitmask of all hand card positions
+    hand_mask = ((1 << len(hand)) - 1) << n_table
+
+    def bt(covered: int, melds: list) -> bool:
+        best_count = None
+        target = -1
+        for i in range(n_table):
+            if (covered >> i) & 1:
+                continue
+            cnt = sum(1 for ci in covers[i] if (cand_masks[ci] & covered) == 0)
+            if cnt == 0:
+                return False
+            if best_count is None or cnt < best_count:
+                best_count = cnt
+                target = i
+
+        if target == -1:
+            # All table cards covered — pack remaining hand cards.
+            hand_in_melds = bin(covered >> n_table).count('1')
+            unused_hand = [
+                n_table + j for j in range(len(hand))
+                if not ((covered >> (n_table + j)) & 1)
+            ]
+            extra_used, extra_melds = _pack_hand(pool, unused_hand, candidates)
+            cards_played = hand_in_melds + len(extra_used)
+
+            if cards_played == 0:
+                return False
+
+            # Compute covered mask for the final table (table cards + played hand cards).
+            # A candidate is "in new table" if all its cards are covered.
+            # A candidate is "new" if it includes at least one hand card.
+            # Use precomputed bitmasks — O(n_candidates), no extra _build_candidates call.
+            final_covered = covered | (extra_used if isinstance(extra_used, int) else
+                                       sum(1 << i for i in extra_used))
+            opportunities = sum(
+                1 for ci in range(len(cand_masks))
+                if (cand_masks[ci] & final_covered) == cand_masks[ci]   # all in new table
+                and cand_masks[ci] & hand_mask                          # includes a hand card
+            )
+            score = cards_played - lam * opportunities
+
+            if score > best[0]:
+                best[0] = score
+                best[1] = melds + extra_melds
+
+            return cards_played == len(hand)  # early exit on winning move
+
+        tried_sigs: set = set()
+        for ci in covers[target]:
+            if (cand_masks[ci] & covered) == 0:
+                sig = cand_sigs[ci]
+                if sig in tried_sigs:
+                    continue
+                tried_sigs.add(sig)
+                if bt(covered | cand_masks[ci], melds + [cand_cards[ci]]):
+                    return True
+        return False
+
+    bt(0, [])
+
+    return None if best[1] is None else best[1]
+
+
+# ── Version registry ──────────────────────────────────────────────────────────
+
+VERSIONS: dict = {
+    "v1": _find_best_play_v1,
+    "v2": _find_best_play_v2,
+}
+DEFAULT = "v2"
+
+
+def find_best_play(
+    hand: List[Card],
+    table: List[List[Card]],
+    version: str = DEFAULT,
+) -> Optional[List[List[Card]]]:
+    """Dispatch to the requested bot version. Falls back to DEFAULT if unknown."""
+    fn = VERSIONS.get(version) or VERSIONS[DEFAULT]
+    return fn(hand, table)

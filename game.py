@@ -3,6 +3,9 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
 from deck import Card, card_key, is_valid_meld, make_deck
 
 
@@ -20,6 +23,7 @@ class Game:
         self.started_at: Optional[str] = None
         self.ended_at: Optional[str] = None
         self.turn_number: int = 0
+        self.last_activity: str = _now_iso()
 
     def to_dict(self) -> Dict:
         return {
@@ -35,6 +39,7 @@ class Game:
             "started_at": self.started_at,
             "ended_at": self.ended_at,
             "turn_number": self.turn_number,
+            "last_activity": self.last_activity,
         }
 
     @classmethod
@@ -50,6 +55,7 @@ class Game:
         g.started_at = d.get("started_at")
         g.ended_at = d.get("ended_at")
         g.turn_number = d.get("turn_number", 0)
+        g.last_activity = d.get("last_activity", _now_iso())
         return g
 
     def add_player(self, player_id: str, name: str, is_bot: bool = False) -> bool:
@@ -60,11 +66,13 @@ class Game:
         self.players.append({"id": player_id, "name": name, "hand": [], "is_bot": is_bot})
         return True
 
-    def add_bot(self) -> Optional[str]:
+    def add_bot(self, version: str = "v1") -> Optional[str]:
         bot_id = "bot_" + uuid.uuid4().hex[:8]
         name = "Mish Bot"
         if not self.add_player(bot_id, name, is_bot=True):
             return None
+        # Store version on the player object for dispatch at turn time
+        next(p for p in self.players if p['id'] == bot_id)['bot_version'] = version
         return bot_id
 
     def start(self, requestor_id: str) -> bool:
@@ -83,19 +91,21 @@ class Game:
         # Non-dealer goes first; their first turn action is to draw or play
         self.current_player_idx = 1 % len(self.players)
         self.status = "playing"
-        self.started_at = datetime.now(timezone.utc).isoformat()
+        self.started_at = _now_iso()
+        self.last_activity = self.started_at
         return True
 
     def draw_card(self, player_id: str) -> Optional[Card]:
         player = self._get_current_player()
         if player is None or player['id'] != player_id:
             return None
+        self.last_activity = _now_iso()
         if not self.draw_pile:
             # Deck exhausted - game is a draw
             self.status = "ended"
             self.winner = None
             self.winner_id = None
-            self.ended_at = datetime.now(timezone.utc).isoformat()
+            self.ended_at = self.last_activity
             return None
         card = self.draw_pile.pop()
         player['hand'].append(card)
@@ -154,12 +164,13 @@ class Game:
         player['hand'] = remaining
         self.table = new_table
 
+        self.last_activity = _now_iso()
         # Check win condition
         if not player['hand']:
             self.status = "ended"
             self.winner = player['name']
             self.winner_id = player['id']
-            self.ended_at = datetime.now(timezone.utc).isoformat()
+            self.ended_at = self.last_activity
             return True, "win"
 
         self._advance_turn()

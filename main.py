@@ -4,6 +4,7 @@ import logging
 import os
 import uuid
 from concurrent.futures import ProcessPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict
 
@@ -11,6 +12,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Header
 from fastapi.responses import FileResponse, Response, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+import bot
 from bot import find_best_play
 from lobby import Lobby
 import auth
@@ -28,6 +30,55 @@ app = FastAPI()
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+IDLE_PLAYING_SECS = 2 * 3600   # 2 hours — human might be AFK
+IDLE_WAITING_SECS = 30 * 60    # 30 minutes — no one joined
+REAPER_INTERVAL_SECS = 10 * 60 # run every 10 minutes
+
+
+async def reap_idle_games():
+    """Periodically abort games that have been idle too long."""
+    while True:
+        await asyncio.sleep(REAPER_INTERVAL_SECS)
+        now = datetime.now(timezone.utc)
+        to_reap = []
+        for game_id, game in list(lobby.games.items()):
+            if game.status == "ended":
+                continue
+            try:
+                last = datetime.fromisoformat(game.last_activity)
+            except Exception:
+                continue
+            idle_secs = (now - last).total_seconds()
+            limit = IDLE_PLAYING_SECS if game.status == "playing" else IDLE_WAITING_SECS
+            if idle_secs > limit:
+                to_reap.append((game_id, game, idle_secs))
+
+        for game_id, game, idle_secs in to_reap:
+            log.info(
+                "reaper: aborting idle game=%s status=%s idle=%.0fs players=%s",
+                game_id, game.status, idle_secs, [p['id'] for p in game.players],
+            )
+            for p in game.players:
+                player_games.pop(p['id'], None)
+                ws_p = connections.get(p['id'])
+                if ws_p:
+                    await send(ws_p, {
+                        "type": "game_aborted",
+                        "message": "Game ended due to inactivity",
+                        "reason": "idle",
+                    })
+            _bot_last_draw_state.pop(game_id, None)
+            lobby.remove_game(game_id)
+            try:
+                await db.record_game_end(game, "aborted")
+                await db.delete_active_game(game_id)
+            except Exception as exc:
+                log.error("reaper: DB cleanup failed for game=%s: %s", game_id, exc)
+
+        if to_reap:
+            await broadcast_lobby_state()
+
+
 @app.on_event("startup")
 async def startup():
     await auth.init_db()
@@ -37,6 +88,7 @@ async def startup():
         lobby.games[game.game_id] = game
         for p in game.players:
             player_games[p["id"]] = game.game_id
+    asyncio.create_task(reap_idle_games())
 
 
 @app.get("/static/{filename:path}")
@@ -51,6 +103,7 @@ async def static_files(filename: str):
 
 lobby = Lobby()
 _bot_pool = ProcessPoolExecutor(max_workers=2)
+_bot_pending: Dict[str, "Future"] = {}   # game_id -> submitted cf.Future
 connections: Dict[str, WebSocket] = {}   # player_id -> WebSocket
 player_games: Dict[str, str] = {}        # player_id -> game_id
 admin_connections: set = set()           # admin WebSocket connections
@@ -463,6 +516,7 @@ async def record_turn(game, player_name: str, action: str):
 
 
 async def trigger_bot_if_needed(game_id: str):
+    global _bot_pool, _bot_pending
     game = lobby.get_game(game_id)
     if game is None or game.status != "playing":
         return
@@ -496,15 +550,27 @@ async def trigger_bot_if_needed(game_id: str):
         await trigger_bot_if_needed(game_id)
         return
 
-    loop = asyncio.get_event_loop()
+    bot_version = current.get('bot_version', bot.DEFAULT)
+    _future = _bot_pool.submit(find_best_play, current['hand'], game.table, bot_version)
+    _bot_pending[game_id] = _future
     try:
-        new_table = await asyncio.wait_for(
-            loop.run_in_executor(_bot_pool, find_best_play, current['hand'], game.table),
-            timeout=10.0,
-        )
+        new_table = await asyncio.wait_for(asyncio.wrap_future(_future), timeout=10.0)
     except asyncio.TimeoutError:
-        log.warning("bot timed out, drawing: bot=%s game=%s", bot_id, game_id)
+        if not _future.cancel():
+            # Worker is already running and hung — reset pool to reclaim the slot
+            log.warning("bot timed out (running), resetting pool: bot=%s game=%s", bot_id, game_id)
+            stranded = [gid for gid, f in _bot_pending.items() if gid != game_id and not f.done()]
+            _bot_pool.shutdown(wait=False)
+            _bot_pool = ProcessPoolExecutor(max_workers=2)
+            _bot_pending.clear()
+            for gid in stranded:
+                log.info("re-triggering bot after pool reset: game=%s", gid)
+                asyncio.get_event_loop().create_task(trigger_bot_if_needed(gid))
+        else:
+            log.warning("bot timed out (queued), cancelled: bot=%s game=%s", bot_id, game_id)
         new_table = None
+    finally:
+        _bot_pending.pop(game_id, None)
     if new_table is None:
         log.info("bot draw_card: bot=%s game=%s", bot_id, game_id)
         _bot_last_draw_state[game_id] = state_key
@@ -546,7 +612,10 @@ async def admin_ws(ws: WebSocket, key: str = ""):
     except Exception:
         return
     if not _check_admin(key):
-        await ws.close(code=4001, reason="Unauthorized")
+        try:
+            await ws.close(code=4001, reason="Unauthorized")
+        except Exception:
+            pass
         return
     admin_connections.add(ws)
     try:
@@ -748,7 +817,11 @@ async def websocket_endpoint(ws: WebSocket):
                 if game is None or game.creator_id != player_id:
                     await send(ws, {"type": "error", "message": "Only the creator can add a bot"})
                     continue
-                bot_id = game.add_bot()
+                version = msg.get("version", bot.DEFAULT)
+                if version not in bot.VERSIONS:
+                    await send(ws, {"type": "error", "message": f"Unknown bot version: {version}"})
+                    continue
+                bot_id = game.add_bot(version=version)
                 if bot_id is None:
                     await send(ws, {"type": "error", "message": "Cannot add bot"})
                     continue

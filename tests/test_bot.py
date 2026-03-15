@@ -134,10 +134,11 @@ def test_splits_run_to_insert_card():
 
 
 def test_maximises_cards_played():
-    # Hand has a set AND can extend table run — should play both
+    # v1 greedily plays all 4 cards; v2 may withhold Q♠ to avoid extending
+    # the table run (which gifts the opponent a longer sequence).
     table = [[c("9", "S"), c("10", "S"), c("J", "S")]]
     hand  = [c("Q", "S"), c("5", "H"), c("5", "D"), c("5", "C")]
-    result = find_best_play(hand, table)
+    result = find_best_play(hand, table, version="v1")
     assert result is not None
     assert_valid_result(hand, table, result)
     assert cards_played(hand, result, table) == 4
