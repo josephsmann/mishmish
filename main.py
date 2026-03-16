@@ -104,6 +104,7 @@ async def static_files(filename: str):
 lobby = Lobby()
 _bot_pool = ProcessPoolExecutor(max_workers=2)
 _bot_pending: Dict[str, "Future"] = {}   # game_id -> submitted cf.Future
+_bot_precomp: Dict[str, "Future"] = {}   # game_id -> speculative precomp future
 connections: Dict[str, WebSocket] = {}   # player_id -> WebSocket
 player_games: Dict[str, str] = {}        # player_id -> game_id
 admin_connections: set = set()           # admin WebSocket connections
@@ -496,6 +497,8 @@ async def cleanup_ended_game(game_id: str):
         for p in game.players:
             player_games.pop(p['id'], None)
         _bot_last_draw_state.pop(game_id, None)
+        _bot_precomp.pop(game_id, None)
+        _bot_pending.pop(f"precomp_{game_id}", None)
         lobby.remove_game(game_id)
         try:
             await db.record_game_end(game, "ended")
@@ -513,6 +516,33 @@ async def record_turn(game, player_name: str, action: str):
         )
     except Exception as exc:
         log.warning("record_turn failed: game=%s: %s", game.game_id, exc)
+
+
+async def _precompute_for_bot(game_id: str):
+    """Speculatively submit bot search during the opponent's turn.
+
+    The result is stored in _bot_precomp[game_id] and consumed (or discarded)
+    by trigger_bot_if_needed when the bot's turn arrives.
+    """
+    global _bot_pool
+    game = lobby.get_game(game_id)
+    if game is None or game.status != "playing":
+        return
+    current = game._get_current_player()
+    if current is None or not current.get("is_bot"):
+        return
+    bot_id = current["id"]
+    bot_version = current.get("bot_version", bot.DEFAULT)
+    try:
+        _future = _bot_pool.submit(find_best_play, current["hand"], game.table, bot_version)
+        _bot_precomp[game_id] = _future
+        # Also register in _bot_pending under a prefixed key so pool-reset
+        # stranded-future sweep can see it (sweep skips precomp_ keys
+        # when deciding which games to re-trigger).
+        _bot_pending[f"precomp_{game_id}"] = _future
+        log.info("bot precomp started: bot=%s game=%s", bot_id, game_id)
+    except Exception as exc:
+        log.warning("bot precomp submit failed: game=%s: %s", game_id, exc)
 
 
 async def trigger_bot_if_needed(game_id: str):
@@ -550,32 +580,57 @@ async def trigger_bot_if_needed(game_id: str):
         await trigger_bot_if_needed(game_id)
         return
 
-    bot_version = current.get('bot_version', bot.DEFAULT)
-    _future = _bot_pool.submit(find_best_play, current['hand'], game.table, bot_version)
-    _bot_pending[game_id] = _future
-    try:
-        new_table = await asyncio.wait_for(asyncio.wrap_future(_future), timeout=game.bot_timeout_seconds)
-    except asyncio.TimeoutError:
-        if not _future.cancel():
-            # Worker is already running and hung — reset pool to reclaim the slot
-            log.warning("bot timed out (running), resetting pool: bot=%s game=%s", bot_id, game_id)
-            stranded = [gid for gid, f in _bot_pending.items() if gid != game_id and not f.done()]
-            _bot_pool.shutdown(wait=False)
-            _bot_pool = ProcessPoolExecutor(max_workers=2)
-            _bot_pending.clear()
-            for gid in stranded:
-                log.info("re-triggering bot after pool reset: game=%s", gid)
-                asyncio.get_event_loop().create_task(trigger_bot_if_needed(gid))
+    # Check for a ready precomp result from the opponent's turn
+    precomp_future = _bot_precomp.pop(game_id, None)
+    _bot_pending.pop(f"precomp_{game_id}", None)
+
+    _timed_out = False
+    if precomp_future is not None and precomp_future.done() and precomp_future.exception() is None:
+        if tuple(sorted((c['rank'], c['suit']) for meld in game.table for c in meld)) == table_key:
+            # Table unchanged: use precomp result for free
+            new_table = precomp_future.result()
+            log.info("bot using precomp result: bot=%s game=%s", bot_id, game_id)
         else:
-            log.warning("bot timed out (queued), cancelled: bot=%s game=%s", bot_id, game_id)
+            # Table changed: discard and run fresh
+            precomp_future = None
+            new_table = None
+    else:
+        precomp_future = None
         new_table = None
-    finally:
-        _bot_pending.pop(game_id, None)
+
+    if precomp_future is None:
+        # No usable precomp — submit fresh job
+        bot_version = current.get('bot_version', bot.DEFAULT)
+        _future = _bot_pool.submit(find_best_play, current['hand'], game.table, bot_version)
+        _bot_pending[game_id] = _future
+        try:
+            new_table = await asyncio.wait_for(asyncio.wrap_future(_future), timeout=game.bot_timeout_seconds)
+        except asyncio.TimeoutError:
+            if not _future.cancel():
+                log.warning("bot timed out (running), resetting pool: bot=%s game=%s", bot_id, game_id)
+                stranded = [gid for gid, f in _bot_pending.items()
+                            if gid != game_id and not gid.startswith("precomp_") and not f.done()]
+                _bot_pool.shutdown(wait=False)
+                _bot_pool = ProcessPoolExecutor(max_workers=2)
+                _bot_pending.clear()
+                _bot_precomp.clear()
+                for gid in stranded:
+                    log.info("re-triggering bot after pool reset: game=%s", gid)
+                    asyncio.get_event_loop().create_task(trigger_bot_if_needed(gid))
+            else:
+                log.warning("bot timed out (queued), cancelled: bot=%s game=%s", bot_id, game_id)
+            new_table = None
+            _timed_out = True
+            _bot_pending.pop(game_id, None)
+        else:
+            _bot_pending.pop(game_id, None)
+
     if new_table is None:
         log.info("bot draw_card: bot=%s game=%s", bot_id, game_id)
         _bot_last_draw_state[game_id] = state_key
         game.draw_card(bot_id)
-        await record_turn(game, current['name'], "draw")
+        _draw_action = "timeout_draw" if _timed_out else "draw"
+        await record_turn(game, current['name'], _draw_action)
     else:
         _bot_last_draw_state.pop(game_id, None)
         ok, _ = game.play_turn(bot_id, new_table)
@@ -783,6 +838,7 @@ async def websocket_endpoint(ws: WebSocket):
                 if _drawing_player:
                     await record_turn(game, _drawing_player['name'], "draw")
                 await broadcast_game_state(game_id)
+                asyncio.create_task(_precompute_for_bot(game_id))
                 await cleanup_ended_game(game_id)
                 await trigger_bot_if_needed(game_id)
 
@@ -805,6 +861,7 @@ async def websocket_endpoint(ws: WebSocket):
                 if _playing_player:
                     await record_turn(game, _playing_player['name'], "play")
                 await broadcast_game_state(game_id)
+                asyncio.create_task(_precompute_for_bot(game_id))
                 await cleanup_ended_game(game_id)
                 await trigger_bot_if_needed(game_id)
 
@@ -880,6 +937,9 @@ async def websocket_endpoint(ws: WebSocket):
                 # Clean up in-memory state first (never fails)
                 for p in game.players:
                     player_games.pop(p['id'], None)
+                _bot_last_draw_state.pop(game_id, None)
+                _bot_precomp.pop(game_id, None)
+                _bot_pending.pop(f"precomp_{game_id}", None)
                 lobby.remove_game(game_id)
                 # Notify all players; the aborter gets reason="self", others get reason="other"
                 for p in game.players:
