@@ -17,6 +17,8 @@ let handSnapshot = [];
 let _pendingHelloId = null; // set while waiting for hello_result from server
 let previewTable = null;   // live staged table broadcast from the current player
 let previewHandSize = null; // live hand size of the current player (from stage_update)
+let botTurnStart = null;   // Date.now() when bot's turn began, null otherwise
+let _botTimerInterval = null;
 
 // ---- Auth state ----
 let authToken = localStorage.getItem("mishmish-auth-token") || null;
@@ -134,6 +136,20 @@ function handleMessage(msg) {
       inGame = true;
       if (serverState.your_turn && !prevYourTurn) playTurnSound();
       prevYourTurn = serverState.your_turn;
+      // Track bot turn elapsed time
+      { const botIsCurrent = serverState.status === "playing" &&
+          serverState.players.some(p => p.is_bot && p.is_current);
+        if (botIsCurrent) {
+          if (botTurnStart === null) {
+            botTurnStart = Date.now();
+            if (_botTimerInterval) clearInterval(_botTimerInterval);
+            _botTimerInterval = setInterval(() => { renderPlayersBar(); }, 1000);
+          }
+        } else {
+          botTurnStart = null;
+          if (_botTimerInterval) { clearInterval(_botTimerInterval); _botTimerInterval = null; }
+        }
+      }
       if (serverState.status === "ended") {
         // Keep board visible; overlay the winner banner on top
         hideAbortConfirm();
@@ -156,6 +172,8 @@ function handleMessage(msg) {
     case "game_aborted":
       inGame = false;
       serverState = null;
+      botTurnStart = null;
+      if (_botTimerInterval) { clearInterval(_botTimerInterval); _botTimerInterval = null; }
       renderIdentityBar();
       showView("lobby");
       // Only show an error banner if this was unexpected (aborted by someone else).
@@ -529,8 +547,10 @@ function renderPlayersBar() {
     } else {
       count = p.hand_size;
     }
+    const elapsed = (p.is_bot && p.is_current && botTurnStart !== null)
+      ? ` ${Math.floor((Date.now() - botTurnStart) / 1000)}s` : "";
     return `<div class="player-chip ${p.is_current ? "current-player" : ""}">
-      ${escHtml(p.name)}${p.is_bot ? " 🤖" : ""} (${count})
+      ${escHtml(p.name)}${p.is_bot ? " 🤖" : ""} (${count})${escHtml(elapsed)}
     </div>`;
   }).join("");
 }
