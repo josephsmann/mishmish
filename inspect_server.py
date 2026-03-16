@@ -161,7 +161,7 @@ def _(history_games, mo, pl):
             "winner":     [g.get("winner_name") or "—" for g in history_games],
             "end_status": [g.get("end_status") or "" for g in history_games],
             "players":    [
-                ", ".join(p.get("name", "") if isinstance(p, dict) else str(p)
+                ", ".join(p.get("player_name", "") if isinstance(p, dict) else str(p)
                           for p in g.get("players", []))
                 for g in history_games
             ],
@@ -283,7 +283,7 @@ def _(game_detail, get_selected, mo):
     _status = _g.get("status") or _g.get("end_status") or "—"
     _winner = _g.get("winner_name") or _g.get("winner") or "—"
     _players = _g.get("players", [])
-    _names = [p.get("name", "") if isinstance(p, dict) else str(p) for p in _players]
+    _names = [p.get("player_name", p.get("name", "")) if isinstance(p, dict) else str(p) for p in _players]
 
     mo.md(f"""
     ## Game `{_gid[:8]}…`
@@ -352,7 +352,8 @@ def _(game_detail, mo):
     for _p in _players:
         _hand = _p.get("final_hand") or _p.get("hand") or []
         _hand_html = "".join(card_html(c) for c in _hand) if _hand else "<em>empty</em>"
-        _parts.append(f"<b>{_p.get('name','?')}</b> — {len(_hand)} cards: {_hand_html}<br>")
+        _pname = _p.get("name") or _p.get("player_name") or "?"
+        _parts.append(f"<b>{_pname}</b> — {len(_hand)} cards: {_hand_html}<br>")
 
     mo.Html("".join(_parts))
     return SUIT_COLOR, SUIT_SYMBOL
