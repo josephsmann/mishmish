@@ -746,6 +746,8 @@ async def websocket_endpoint(ws: WebSocket):
                             await broadcast_game_state(game_id)
                             if game.status == "waiting":
                                 await broadcast_lobby_state()
+                            elif game.status == "playing":
+                                await trigger_bot_if_needed(game_id)
                         else:
                             await send(ws, {
                                 "type": "hello_result",
@@ -768,6 +770,8 @@ async def websocket_endpoint(ws: WebSocket):
                     await broadcast_game_state(game_id)
                     if game.status == "waiting":
                         await broadcast_lobby_state()
+                    elif game.status == "playing":
+                        await trigger_bot_if_needed(game_id)
                 else:
                     await send(ws, {"type": "hello_result", "restored": False})
                     await send(ws, {"type": "lobby_state", "games": lobby.list_games()})
