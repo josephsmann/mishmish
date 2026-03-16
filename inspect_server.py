@@ -422,11 +422,12 @@ def _(SUIT_COLOR, SUIT_SYMBOL, game_turns, mo):
     _rows = []
     for _i, _t in enumerate(game_turns):
         _duration = round((_timestamps[_i] - _timestamps[_i - 1]).total_seconds(), 1) if _i > 0 else 0.0
-        _action_badge = (
-            '<span style="background:#4caf50;color:#fff;border-radius:3px;padding:1px 5px;font-size:0.8em">play</span>'
-            if _t["action"] == "play" else
-            '<span style="background:#2196f3;color:#fff;border-radius:3px;padding:1px 5px;font-size:0.8em">draw</span>'
-        )
+        if _t["action"] == "play":
+            _action_badge = '<span style="background:#4caf50;color:#fff;border-radius:3px;padding:1px 5px;font-size:0.8em">play</span>'
+        elif _t["action"] == "timeout_draw":
+            _action_badge = '<span style="background:#e67e22;color:#fff;border-radius:3px;padding:1px 5px;font-size:0.8em">timeout</span>'
+        else:
+            _action_badge = '<span style="background:#2196f3;color:#fff;border-radius:3px;padding:1px 5px;font-size:0.8em">draw</span>'
         _player_cells = "".join(
             f'<td style="padding:4px 8px;border-bottom:1px solid #333;vertical-align:top">{_hand_html(_t["hands"].get(n, []))}</td>'
             for n in _player_names
