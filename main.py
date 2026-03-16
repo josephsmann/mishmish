@@ -554,7 +554,7 @@ async def trigger_bot_if_needed(game_id: str):
     _future = _bot_pool.submit(find_best_play, current['hand'], game.table, bot_version)
     _bot_pending[game_id] = _future
     try:
-        new_table = await asyncio.wait_for(asyncio.wrap_future(_future), timeout=10.0)
+        new_table = await asyncio.wait_for(asyncio.wrap_future(_future), timeout=game.bot_timeout_seconds)
     except asyncio.TimeoutError:
         if not _future.cancel():
             # Worker is already running and hung — reset pool to reclaim the slot
@@ -763,7 +763,7 @@ async def websocket_endpoint(ws: WebSocket):
                     continue
                 await broadcast_game_state(game_id)
                 await broadcast_lobby_state()
-                await trigger_bot_if_needed(game_id)
+                asyncio.get_event_loop().create_task(trigger_bot_if_needed(game_id))
 
             elif msg_type == "draw_card":
                 game_id = player_games.get(player_id)
@@ -827,6 +827,24 @@ async def websocket_endpoint(ws: WebSocket):
                     continue
                 await broadcast_game_state(game_id)
                 await broadcast_lobby_state()
+
+            elif msg_type == "set_bot_timeout":
+                game_id = player_games.get(player_id)
+                if not game_id:
+                    await send(ws, {"type": "error", "message": "Not in a game"})
+                    continue
+                game = lobby.get_game(game_id)
+                if game is None or game.status != "playing":
+                    await send(ws, {"type": "error", "message": "No active game"})
+                    continue
+                # Only non-bot players may adjust the timeout
+                requester = next((p for p in game.players if p["id"] == player_id), None)
+                if requester is None or requester.get("is_bot"):
+                    await send(ws, {"type": "error", "message": "Not allowed"})
+                    continue
+                seconds = float(msg.get("seconds", 10.0))
+                game.bot_timeout_seconds = max(2.0, min(60.0, seconds))
+                log.info("set_bot_timeout: pid=%s game=%s seconds=%s", player_id, game_id, game.bot_timeout_seconds)
 
             elif msg_type == "stage_update":
                 game_id = player_games.get(player_id)
