@@ -165,6 +165,10 @@ function handleMessage(msg) {
 
     case "error":
       showError(msg.message);
+      if (msg.message === "Cannot remove cards from table") {
+        // serverState.table is stale — force reconnect to get fresh state
+        syncState();
+      }
       break;
   }
 }
@@ -922,6 +926,25 @@ function drawCard() {
 }
 
 function confirmTurn() {
+  // Guard: ensure no cards were removed from the table (drag-and-drop can silently lose cards)
+  if (serverState) {
+    const oldCounts = {};
+    serverState.table.forEach(meld => meld.forEach(c => {
+      const k = c.rank + c.suit;
+      oldCounts[k] = (oldCounts[k] || 0) + 1;
+    }));
+    const newCounts = {};
+    stagedTable.forEach(meld => meld.forEach(c => {
+      const k = c.rank + c.suit;
+      newCounts[k] = (newCounts[k] || 0) + 1;
+    }));
+    const missing = Object.entries(oldCounts).some(([k, n]) => (newCounts[k] || 0) < n);
+    if (missing) {
+      showError("Table state corrupted — resetting. Please try again.");
+      resetTurn();
+      return;
+    }
+  }
   send({ type: "play_turn", table: stagedTable });
 }
 
