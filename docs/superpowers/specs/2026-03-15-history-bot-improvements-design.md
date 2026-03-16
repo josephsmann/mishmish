@@ -41,11 +41,16 @@ No data migration needed (no production history worth keeping yet).
 
 ### 2. inspect_server.py Bug Fixes
 
-**Bug 1 — wrong player name field in history:**
-`p.get("name", "")` → `p.get("player_name", "")` in the history table cell and the game detail header cell.
+**Bug 1 — wrong player name field in history (3 call sites):**
+`p.get("name", "")` / `p.get('name','?')` → `p.get("player_name", "")` in:
+- The history table cell (players column)
+- The game detail header cell (`_names` list)
+- The card view cell (`_p.get('name','?')` in the player hand loop)
 
 **Bug 2 — history game detail card view shows no cards:**
-`/history/games/{id}` returns only summary fields (no table/hands). The final state is available as the last row of `game_turns`, which is already fetched in the same notebook session. The card view cell should fall back to `game_turns[-1]` when `game_detail` lacks table/hand data (i.e., for history games).
+`/history/games/{id}` returns only summary fields (no table/hands). The final state is available as the last row of `game_turns`.
+
+The card view cell and the game_turns fetch cell must be **reordered** so that `game_turns` is fetched first (making it available as a cell parameter in the card view). The card view cell then uses `game_turns[-1]["table"]` and `game_turns[-1]["hands"]` as fallback when `game_detail` lacks table/hand data (i.e., for history games where `game_detail.get("table")` is empty).
 
 ---
 
@@ -82,14 +87,16 @@ _bot_precomp: Dict[str, Future] = {}  # game_id -> submitted cf.Future
 
 **In `trigger_bot_if_needed`** — before submitting a new job:
 1. Compute current `state_key = (hand_key, table_key)` as today
-2. Check `_bot_precomp.get(game_id)`:
+2. Pop `_bot_precomp.get(game_id)` (removing it) and inspect:
    - **Future done, no exception, table+hand unchanged** → use result immediately; no pool submission; budget timer never started → effectively free
-   - **Future done, table/hand changed** → discard result; run fresh job with full `bot_timeout_seconds` budget
+   - **Future done but raised exception, OR table/hand changed** → discard; run fresh job with full `bot_timeout_seconds` budget
    - **Future still running** → wrap it with `asyncio.wait_for(..., timeout=bot_timeout_seconds)`; budget starts now (at bot turn start), not at precomp start
    - **No precomp entry** → run fresh job as today
-3. Pop `_bot_precomp[game_id]` after use (or if not used)
+3. Precomp future is always popped before use, so no double-use
 
 **Key invariant:** The bot's time budget (`bot_timeout_seconds`) is measured from when `trigger_bot_if_needed` starts, never from when pre-computation started.
+
+**Interaction with pool reset:** The pool-reset branch (lines 563–565 in main.py) currently clears `_bot_pending`. It must also clear `_bot_precomp` to avoid dangling futures referencing the dead pool. Precomp futures submitted to `_bot_pool` are also added to `_bot_pending` under a `"precomp_{game_id}"` key so the stranded-future sweep can track them; the sweep ignores keys prefixed `"precomp_"` when deciding which games to re-trigger.
 
 **Cleanup:** Pop `_bot_precomp[game_id]` in `cleanup_ended_game` and `abort_game`.
 
@@ -101,6 +108,9 @@ _bot_precomp: Dict[str, Future] = {}  # game_id -> submitted cf.Future
 - Call `record_turn(game, current['name'], "timeout_draw")` instead of `"draw"`
 
 No schema changes needed — `action` is a free-text field.
+
+**inspect_server.py — turn history badge renderer:**
+Add a third badge style for `"timeout_draw"` (e.g. orange/amber) alongside the existing `"play"` (green) and `"draw"` (blue) badges so timeouts are visually distinct in the turn table.
 
 ---
 
