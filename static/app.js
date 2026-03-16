@@ -383,16 +383,26 @@ function renderWaiting() {
   ).join("");
   const btnStart = document.getElementById("btn-start");
   btnStart.style.display = isCreator ? "inline-block" : "none";
-  const btnAddBot = document.getElementById("btn-add-bot");
-  if (btnAddBot) btnAddBot.style.display = isCreator ? "inline-block" : "none";
+  const botControls = document.getElementById("bot-controls");
+  if (botControls) botControls.style.display = isCreator ? "inline-flex" : "none";
 }
 
 function startGame() {
   send({ type: "start_game" });
+  // Apply the think-time setting once the game is playing.
+  // Small delay so the server transitions to "playing" before we send.
+  const secs = parseFloat(document.getElementById("bot-think-time")?.value) || 10;
+  if (secs !== 10) setTimeout(() => send({ type: "set_bot_timeout", seconds: secs }), 500);
 }
 
 function addBot() {
   send({ type: "add_bot" });
+}
+
+function setBotTimeout(val) {
+  const secs = parseFloat(val);
+  document.getElementById("bot-timeout-label").textContent = secs + "s";
+  send({ type: "set_bot_timeout", seconds: secs });
 }
 
 // ---- Game ----
@@ -487,6 +497,18 @@ function renderGame() {
 
   // New meld zone visibility
   document.getElementById("new-meld-zone").style.display = canAct ? "flex" : "none";
+
+  // Bot timeout slider — show when a bot is in the game and game is active
+  const hasBot = serverState.players.some(p => p.is_bot);
+  const timeoutCtrl = document.getElementById("bot-timeout-control");
+  timeoutCtrl.style.display = hasBot && !isEnded ? "inline-flex" : "none";
+  if (hasBot && serverState.bot_timeout_seconds) {
+    const slider = document.getElementById("bot-timeout-slider");
+    if (slider && document.activeElement !== slider) {
+      slider.value = serverState.bot_timeout_seconds;
+      document.getElementById("bot-timeout-label").textContent = serverState.bot_timeout_seconds + "s";
+    }
+  }
 }
 
 function renderPlayersBar() {

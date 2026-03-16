@@ -124,7 +124,10 @@
       <div id="waiting-players"></div>
       <p class="waiting-msg">Waiting for players...</p>
       <button id="btn-start" onclick="startGame()" style="display:none">Start Game</button>
-      <button id="btn-add-bot" onclick="addBot()" style="display:none">Add Bot</button>
+      <span id="bot-controls" style="display:none;align-items:center;gap:8px">
+        <button id="btn-add-bot" onclick="addBot()">Add Bot</button>
+        <label style="color:#b0bec5;font-size:0.85rem">Think time: <input type="number" id="bot-think-time" value="10" min="2" max="60" step="1" style="width:52px;background:#2a2a2a;color:#e0e0e0;border:1px solid #555;border-radius:4px;padding:2px 4px;font-size:0.85rem"> s</label>
+      </span>
       <button id="btn-abort-waiting" onclick="abortGame()" style="margin-top:12px;background:#607d8b;color:#fff">Abort Game</button>
     </div>
   </div>
@@ -188,6 +191,10 @@
         <button id="btn-reset" onclick="resetTurn()">Pick up cards</button>
         <button id="btn-abort" onclick="abortGame()" title="Abort game">Abort</button>
         <button id="btn-sync" onclick="syncState()" title="Resync with server">↺</button>
+        <label id="bot-timeout-control" style="display:none;align-items:center;gap:6px;color:#b0bec5;font-size:0.85rem;margin-left:8px">
+          🤖 <input type="range" id="bot-timeout-slider" min="2" max="60" step="1" value="10" style="width:80px" oninput="setBotTimeout(this.value)">
+          <span id="bot-timeout-label">10s</span>
+        </label>
       </div>
 
 
