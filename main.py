@@ -763,7 +763,7 @@ async def websocket_endpoint(ws: WebSocket):
                     continue
                 await broadcast_game_state(game_id)
                 await broadcast_lobby_state()
-                asyncio.get_event_loop().create_task(trigger_bot_if_needed(game_id))
+                await trigger_bot_if_needed(game_id)
 
             elif msg_type == "draw_card":
                 game_id = player_games.get(player_id)
