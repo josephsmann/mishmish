@@ -68,6 +68,8 @@ async def reap_idle_games():
                         "reason": "idle",
                     })
             _bot_last_draw_state.pop(game_id, None)
+            _bot_precomp.pop(game_id, None)
+            _bot_pending.pop(f"precomp_{game_id}", None)
             lobby.remove_game(game_id)
             try:
                 await db.record_game_end(game, "aborted")
@@ -592,6 +594,7 @@ async def trigger_bot_if_needed(game_id: str):
             log.info("bot using precomp result: bot=%s game=%s", bot_id, game_id)
         else:
             # Table changed: discard and run fresh
+            precomp_future.cancel()
             precomp_future = None
             new_table = None
     else:
@@ -613,6 +616,8 @@ async def trigger_bot_if_needed(game_id: str):
                 _bot_pool.shutdown(wait=False)
                 _bot_pool = ProcessPoolExecutor(max_workers=2)
                 _bot_pending.clear()
+                for f in _bot_precomp.values():
+                    f.cancel()
                 _bot_precomp.clear()
                 for gid in stranded:
                     log.info("re-triggering bot after pool reset: game=%s", gid)
