@@ -321,7 +321,19 @@ def _(BASE_URL, HEADERS, delete_button, get_selected, httpx, mo):
 
 
 @app.cell(hide_code=True)
-def _(game_detail, mo):
+def _(BASE_URL, game_detail, get_selected, httpx):
+    game_detail
+    _sel = get_selected()
+    game_turns = []
+    if _sel is not None:
+        _r = httpx.get(f"{BASE_URL}/history/games/{_sel['game_id']}/turns", timeout=10)
+        if _r.is_success:
+            game_turns = _r.json().get("turns", [])
+    return (game_turns,)
+
+
+@app.cell(hide_code=True)
+def _(game_detail, game_turns, mo):
     mo.stop(game_detail is None)
 
     SUIT_SYMBOL = {"H": "♥", "D": "♦", "C": "♣", "S": "♠"}
@@ -337,9 +349,20 @@ def _(game_detail, mo):
             f'{card["rank"]}{sym}</span>'
         )
 
-    # Live games use "table"/"hand"; history games use "final_table"/"final_hand"
-    _melds = game_detail.get("final_table") or game_detail.get("table") or []
+    # Live games carry table/hand in game_detail.
+    # History games don't — fall back to last turn in game_turns.
+    _melds = game_detail.get("table") or []
     _players = game_detail.get("players", [])
+
+    if not _melds and game_turns:
+        _last = game_turns[-1]
+        _melds = _last.get("table", [])
+        # Merge final hands into player dicts for display
+        _final_hands = _last.get("hands", {})
+        _players = [
+            {**p, "_final_hand": _final_hands.get(p.get("player_name") or p.get("name", ""), [])}
+            for p in _players
+        ]
 
     _parts = ["<h3>Table</h3>"]
     if _melds:
@@ -350,25 +373,13 @@ def _(game_detail, mo):
 
     _parts.append("<h3>Players</h3>")
     for _p in _players:
-        _hand = _p.get("final_hand") or _p.get("hand") or []
+        _hand = _p.get("hand") or _p.get("_final_hand") or []
         _hand_html = "".join(card_html(c) for c in _hand) if _hand else "<em>empty</em>"
         _pname = _p.get("name") or _p.get("player_name") or "?"
         _parts.append(f"<b>{_pname}</b> — {len(_hand)} cards: {_hand_html}<br>")
 
     mo.Html("".join(_parts))
     return SUIT_COLOR, SUIT_SYMBOL
-
-
-@app.cell(hide_code=True)
-def _(BASE_URL, game_detail, get_selected, httpx):
-    game_detail
-    _sel = get_selected()
-    game_turns = []
-    if _sel is not None:
-        _r = httpx.get(f"{BASE_URL}/history/games/{_sel['game_id']}/turns", timeout=10)
-        if _r.is_success:
-            game_turns = _r.json().get("turns", [])
-    return (game_turns,)
 
 
 @app.cell(hide_code=True)
