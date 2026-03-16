@@ -24,6 +24,7 @@ class Game:
         self.ended_at: Optional[str] = None
         self.turn_number: int = 0
         self.last_activity: str = _now_iso()
+        self.bot_timeout_seconds: float = 10.0
 
     def to_dict(self) -> Dict:
         return {
@@ -40,6 +41,7 @@ class Game:
             "ended_at": self.ended_at,
             "turn_number": self.turn_number,
             "last_activity": self.last_activity,
+            "bot_timeout_seconds": self.bot_timeout_seconds,
         }
 
     @classmethod
@@ -56,6 +58,7 @@ class Game:
         g.ended_at = d.get("ended_at")
         g.turn_number = d.get("turn_number", 0)
         g.last_activity = d.get("last_activity", _now_iso())
+        g.bot_timeout_seconds = float(d.get("bot_timeout_seconds", 10.0))
         return g
 
     def add_player(self, player_id: str, name: str, is_bot: bool = False) -> bool:
