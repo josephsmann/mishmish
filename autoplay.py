@@ -32,7 +32,7 @@ def mutate(config: BotConfig) -> BotConfig:
     return new
 
 
-def run_matchup(champion: BotConfig, challenger: BotConfig, n_games: int = 50):
+def run_matchup(champion: BotConfig, challenger: BotConfig, n_games: int = 200):
     """
     Play n_games between champion and challenger.
     Half the games have champion as player A (goes first),
@@ -102,11 +102,12 @@ def main():
             print(f"Round {round_num} | Champion: {format_config(pre_round_champion)} | Challenger: {format_config(challenger)}")
 
             champ_wins, chal_wins, draws = run_matchup(champion, challenger)
-            promoted = chal_wins >= 28  # >55% of 50 games
+            decisive = champ_wins + chal_wins
+            promoted = decisive >= 10 and chal_wins / decisive > 0.60
 
-            pct = f"{chal_wins / 50 * 100:.0f}%"
+            pct = f"{chal_wins / decisive * 100:.0f}% of decisive" if decisive > 0 else "0%"
             promo_marker = " ← NEW CHAMPION" if promoted else ""
-            print(f"  Games: 50 | Champion wins: {champ_wins} | Challenger wins: {chal_wins} ({pct}){promo_marker}")
+            print(f"  Games: 200 | Champion wins: {champ_wins} | Challenger wins: {chal_wins} | Draws: {draws} ({pct}){promo_marker}")
 
             if promoted:
                 champion = challenger
@@ -122,6 +123,7 @@ def main():
                 "champion_wins": champ_wins,
                 "challenger_wins": chal_wins,
                 "draws": draws,
+                "decisive": decisive,
                 "promoted": promoted,
                 "elapsed_s": int(elapsed),
             }
