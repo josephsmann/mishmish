@@ -371,110 +371,93 @@ def _find_best_play_v3(
     if not hand:
         return None
 
-    if len(hand) <= config.hand_cutoff:
+    # Use v2 only when pool is small enough to be fast (≤20 total cards).
+    table_cards_flat = [card for meld in table for card in meld]
+    pool_size = len(table_cards_flat) + len(hand)
+    if len(hand) <= config.hand_cutoff and pool_size <= 20:
         return _find_best_play_v2(hand, table, lam=config.lam)
 
     # ── Greedy path ────────────────────────────────────────────────────────
-    table_cards = [card for meld in table for card in meld]
-    n_table = len(table_cards)
-    pool = table_cards + hand
-    n_pool = len(pool)
+    # Fast O(hand × table_melds) approach that avoids building candidates from
+    # the full (potentially huge) pool.  Enumerate two play types:
+    #   (A) New all-hand melds — candidates built from `hand` only.
+    #   (B) Meld extensions — append hand cards to one existing table meld,
+    #       keeping ALL its original cards (so no table cards are removed).
+    # Score: cards_from_hand − λ × hand_only_opportunities
+    # where hand_only_opportunities = # melds formable from the played hand
+    # cards alone (the genuinely new pieces placed on the shared table).
 
-    candidates = _build_candidates(pool)
+    # ── (A) All-hand candidates ────────────────────────────────────────────
+    hand_only_candidates = _build_candidates(hand)
+    # Precompute frozensets of hand indices for subset checks
+    hand_only_index_sets: List[frozenset] = [frozenset(idx) for idx, _ in hand_only_candidates]
 
-    cand_masks: List[int] = []
-    cand_cards_list: List[list] = []
-    for indices, meld_cards in candidates:
-        mask = 0
-        for i in indices:
-            mask |= 1 << i
-        cand_masks.append(mask)
-        cand_cards_list.append(meld_cards)
+    # Each greedy play is:
+    #   play_type: "new" | "extend"
+    #   hand_bits: frozenset of hand indices used
+    #   n_from_hand: number of hand cards played
+    #   new_table_fn: callable() -> new table state
+    play_options: List[tuple] = []
 
-    hand_mask = ((1 << len(hand)) - 1) << n_table
-    table_full_mask = (1 << n_table) - 1
+    for (indices, meld_cards), idx_set in zip(hand_only_candidates, hand_only_index_sets):
+        def make_new(mc=meld_cards):
+            return list(table) + [mc]
+        play_options.append(("new", idx_set, len(indices), make_new))
 
-    # Find candidates that include ≥1 hand card
-    hand_candidates = [
-        (cand_masks[ci], cand_cards_list[ci])
-        for ci in range(len(candidates))
-        if cand_masks[ci] & hand_mask
-    ]
+    # ── (B) Meld-extension candidates ─────────────────────────────────────
+    # Try extending each existing meld with subsets of hand cards (up to 3).
+    # We do single-card extensions exhaustively; for multi-card use _build_candidates
+    # on (meld + hand) with the constraint that all meld cards are included.
+    for mi, meld in enumerate(table):
+        small_pool = list(meld) + list(hand)
+        n_meld = len(meld)
+        ext_cands = _build_candidates(small_pool)
+        for indices, ext_meld in ext_cands:
+            idx_set = frozenset(indices)
+            # Must include ALL meld cards (indices 0..n_meld-1)
+            meld_bits = frozenset(range(n_meld))
+            if not meld_bits <= idx_set:
+                continue
+            hand_bits_in_ext = frozenset(i - n_meld for i in idx_set if i >= n_meld)
+            if not hand_bits_in_ext:
+                continue  # no hand cards added
+            n_from_hand = len(hand_bits_in_ext)
+            ext_meld_copy = ext_meld  # capture
+            def make_ext(midx=mi, em=ext_meld_copy):
+                nt = list(table)
+                nt[midx] = em
+                return nt
+            play_options.append(("extend", hand_bits_in_ext, n_from_hand, make_ext))
 
-    if not hand_candidates:
+    if not play_options:
         return None
-
-    # Build per-table-meld bitmasks for the "extends existing meld" check
-    table_meld_masks = []
-    offset = 0
-    for meld in table:
-        m = 0
-        for i in range(len(meld)):
-            m |= 1 << (offset + i)
-        offset += len(meld)
-        table_meld_masks.append(m)
 
     best_score = 0.0
-    best_ci = -1
+    best_play = None
 
-    for ci, (mask, cards) in enumerate(hand_candidates):
-        table_bits_in_cand = mask & table_full_mask
-        hand_bits_in_cand = mask & hand_mask
-
-        # Only allow if the table-card portion falls entirely within a single
-        # existing table meld (extending it) or has no table bits (new all-hand meld).
-        if table_bits_in_cand:
-            fits = any((table_bits_in_cand & tm) == table_bits_in_cand
-                       for tm in table_meld_masks)
-            if not fits:
-                continue
-
-        cards_from_hand = bin(hand_bits_in_cand).count('1')
-
-        # Opportunities: candidates formable entirely from (table + played hand cards)
-        # that include ≥1 of the played hand cards.
-        final_covered = table_full_mask | hand_bits_in_cand
-        opportunities = sum(
-            1 for ci2 in range(len(cand_masks))
-            if (cand_masks[ci2] & final_covered) == cand_masks[ci2]
-            and cand_masks[ci2] & hand_bits_in_cand
-        )
-
-        score = cards_from_hand - config.lam * opportunities
+    for play_type, hand_bits, n_from_hand, new_table_fn in play_options:
+        # Opportunities: # all-hand melds that are subsets of the played hand bits
+        opps = sum(1 for s in hand_only_index_sets if s <= hand_bits)
+        score = n_from_hand - config.lam * opps
         if score > best_score:
             best_score = score
-            best_ci = ci
+            best_play = (play_type, hand_bits, n_from_hand, new_table_fn)
 
-    if best_ci == -1:
+    if best_play is None:
         return None
 
-    chosen_mask, chosen_cards = hand_candidates[best_ci]
-    table_bits_in_chosen = chosen_mask & table_full_mask
+    play_type, hand_bits, n_from_hand, new_table_fn = best_play
+    new_table = new_table_fn()
 
-    if table_bits_in_chosen:
-        # Extending an existing table meld: replace that meld with chosen_cards
-        new_table = []
-        offset = 0
-        extended = False
-        for meld in table:
-            meld_mask = 0
-            for i in range(len(meld)):
-                meld_mask |= 1 << (offset + i)
-            offset += len(meld)
-            if not extended and (table_bits_in_chosen & meld_mask) == table_bits_in_chosen:
-                new_table.append(chosen_cards)
-                extended = True
-            else:
-                new_table.append(meld)
-    else:
-        # New all-hand meld: keep existing table, append new meld
-        new_table = list(table) + [chosen_cards]
-
-    # Pack remaining hand cards into additional melds
-    unused_hand_indices = [n_table + j for j in range(len(hand))
-                           if not ((chosen_mask >> (n_table + j)) & 1)]
-    _, extra_melds = _pack_hand(pool, unused_hand_indices, candidates)
-    new_table.extend(extra_melds)
+    # Greedily pack remaining hand cards into additional all-hand melds
+    remaining_hand = [hand[j] for j in range(len(hand)) if j not in hand_bits]
+    extra_cands = _build_candidates(remaining_hand)
+    used: set = set()
+    for ex_idx, ex_cards in extra_cands:
+        ex_set = frozenset(ex_idx)
+        if ex_set.isdisjoint(used):
+            new_table.append(ex_cards)
+            used |= ex_set
 
     return new_table
 
