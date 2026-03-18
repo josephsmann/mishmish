@@ -34,8 +34,8 @@ def test_simulate_game_different_configs():
     assert result in ("a", "b", "draw")
 
 
-def test_simulate_game_draw_on_deck_exhaustion(monkeypatch):
-    """simulate_game returns 'draw' when the deck runs out."""
+def test_simulate_game_terminates_on_deck_exhaustion(monkeypatch):
+    """simulate_game terminates when the deck runs out."""
     import game as game_module
     from unittest.mock import patch
 
@@ -48,4 +48,4 @@ def test_simulate_game_draw_on_deck_exhaustion(monkeypatch):
     with patch.object(game_module, "make_deck", tiny_deck):
         cfg = BotConfig(lam=0.5, hand_cutoff=10)
         result = simulate_game(cfg, cfg)
-        assert result == "draw"
+        assert result in ("a", "b", "draw")

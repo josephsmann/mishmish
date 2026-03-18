@@ -37,6 +37,7 @@ def simulate_game(
     config_map = {bot_a_id: config_a, bot_b_id: config_b}
     id_to_key = {bot_a_id: "a", bot_b_id: "b"}
 
+    fallback_count = 0
     for _ in range(TURN_CAP):
         if game.status == "ended":
             break
@@ -55,6 +56,7 @@ def simulate_game(
             ok, msg = game.play_turn(pid, new_table)
             if not ok:
                 # v3 produced an invalid table — fall back to drawing
+                fallback_count += 1
                 game.draw_card(pid)
         else:
             game.draw_card(pid)
@@ -62,6 +64,9 @@ def simulate_game(
 
         if game.status == "ended":
             break
+
+    if fallback_count > 0:
+        print(f"[warn] {fallback_count} invalid play_turn calls fell back to draw")
 
     if game.status != "ended":
         return "draw"
