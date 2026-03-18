@@ -2,7 +2,15 @@ from collections import defaultdict
 from itertools import combinations, product as iproduct
 from typing import List, Optional
 
+from dataclasses import dataclass
+
 from deck import Card, RANKS, is_valid_set
+
+
+@dataclass
+class BotConfig:
+    lam: float = 0.5
+    hand_cutoff: int = 10
 
 _N_RANKS = len(RANKS)
 
@@ -351,7 +359,12 @@ def find_best_play(
     hand: List[Card],
     table: List[List[Card]],
     version: str = DEFAULT,
+    config: "BotConfig | None" = None,
 ) -> Optional[List[List[Card]]]:
     """Dispatch to the requested bot version. Falls back to DEFAULT if unknown."""
-    fn = VERSIONS.get(version) or VERSIONS[DEFAULT]
+    resolved_version = version if version in VERSIONS else DEFAULT
+    fn = VERSIONS[resolved_version]
+    if resolved_version == "v3":
+        cfg = config or BotConfig()
+        return fn(hand, table, config=cfg)
     return fn(hand, table)
