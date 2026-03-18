@@ -24,11 +24,7 @@ from bot_sim import simulate_game
 def mutate(config: BotConfig) -> BotConfig:
     """Return a new BotConfig with exactly one parameter mutated."""
     new = copy(config)
-    param = random.choice(["lam", "hand_cutoff"])
-    if param == "lam":
-        new.lam = float(max(0.0, min(2.0, new.lam + random.gauss(0, 0.1))))
-    else:
-        new.hand_cutoff = int(max(6, min(20, new.hand_cutoff + random.choice([-2, -1, 1, 2]))))
+    new.lam = float(max(0.0, min(2.0, new.lam + random.gauss(0, 0.1))))
     return new
 
 
@@ -42,7 +38,7 @@ def run_matchup(champion: BotConfig, challenger: BotConfig, n_games: int = 200):
     """
     champion_wins = 0
     challenger_wins = 0
-    draws = 0
+    ties = 0
     half = n_games // 2
 
     for i in range(n_games):
@@ -54,7 +50,7 @@ def run_matchup(champion: BotConfig, challenger: BotConfig, n_games: int = 200):
             elif result == "b":
                 challenger_wins += 1
             else:
-                draws += 1
+                ties += 1
         else:
             # Challenger is player A (goes first)
             result = simulate_game(challenger, champion)
@@ -63,9 +59,9 @@ def run_matchup(champion: BotConfig, challenger: BotConfig, n_games: int = 200):
             elif result == "b":
                 champion_wins += 1
             else:
-                draws += 1
+                ties += 1
 
-    return champion_wins, challenger_wins, draws
+    return champion_wins, challenger_wins, ties
 
 
 def format_config(config: BotConfig) -> str:
@@ -101,13 +97,13 @@ def main():
 
             print(f"Round {round_num} | Champion: {format_config(pre_round_champion)} | Challenger: {format_config(challenger)}")
 
-            champ_wins, chal_wins, draws = run_matchup(champion, challenger)
+            champ_wins, chal_wins, ties = run_matchup(champion, challenger)
             decisive = champ_wins + chal_wins
             promoted = decisive >= 10 and chal_wins / decisive > 0.60
 
             pct = f"{chal_wins / decisive * 100:.0f}% of decisive" if decisive > 0 else "0%"
             promo_marker = " ← NEW CHAMPION" if promoted else ""
-            print(f"  Games: 200 | Champion wins: {champ_wins} | Challenger wins: {chal_wins} | Draws: {draws} ({pct}){promo_marker}")
+            print(f"  Games: 200 | Champion wins: {champ_wins} | Challenger wins: {chal_wins} | Ties: {ties} ({pct}){promo_marker}")
 
             if promoted:
                 champion = challenger
@@ -122,7 +118,8 @@ def main():
                 "challenger": dataclasses.asdict(challenger),
                 "champion_wins": champ_wins,
                 "challenger_wins": chal_wins,
-                "draws": draws,
+                "draws": ties,  # kept for log compatibility
+                "ties": ties,
                 "decisive": decisive,
                 "promoted": promoted,
                 "elapsed_s": int(elapsed),

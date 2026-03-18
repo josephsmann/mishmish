@@ -6,7 +6,7 @@ from bot_sim import simulate_game
 def test_simulate_game_returns_valid_outcome():
     cfg = BotConfig(lam=0.5, hand_cutoff=10)
     result = simulate_game(cfg, cfg)
-    assert result in ("a", "b", "draw")
+    assert result in ("a", "b", "tie")
 
 
 def test_simulate_game_completes_without_hanging():
@@ -31,7 +31,7 @@ def test_simulate_game_different_configs():
     cfg_a = BotConfig(lam=0.0, hand_cutoff=6)
     cfg_b = BotConfig(lam=1.0, hand_cutoff=14)
     result = simulate_game(cfg_a, cfg_b)
-    assert result in ("a", "b", "draw")
+    assert result in ("a", "b", "tie")
 
 
 def test_simulate_game_terminates_on_deck_exhaustion(monkeypatch):
@@ -48,4 +48,4 @@ def test_simulate_game_terminates_on_deck_exhaustion(monkeypatch):
     with patch.object(game_module, "make_deck", tiny_deck):
         cfg = BotConfig(lam=0.5, hand_cutoff=10)
         result = simulate_game(cfg, cfg)
-        assert result in ("a", "b", "draw")
+        assert result in ("a", "b", "tie")
