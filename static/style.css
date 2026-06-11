@@ -904,7 +904,13 @@ button:disabled {
   background: #2e7d32;
   color: #fff;
 }
+#btn-resume-rejoin:hover:not(:disabled) {
+  background: #388e3c;
+}
 #btn-resume-abandon {
   background: #607d8b;
   color: #fff;
+}
+#btn-resume-abandon:hover:not(:disabled) {
+  background: #78909c;
 }
