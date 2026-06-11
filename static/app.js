@@ -338,6 +338,7 @@ function doGuest() {
   const errEl = document.getElementById("guest-error");
   if (!name) { errEl.textContent = "Enter a display name"; return; }
   playerName = name;
+  localStorage.setItem("mishmish-player-name", name);
   showView("lobby");
   renderIdentityBar();
 }
@@ -414,6 +415,7 @@ function signOut() {
   localStorage.removeItem("mishmish-auth-token");
   localStorage.removeItem("mishmish-username");
   localStorage.removeItem("mishmish-player-id");
+  localStorage.removeItem("mishmish-player-name");
   inGame = false;
   enteredGame = false;
   hideResumeCard();
@@ -1234,6 +1236,8 @@ async function submitAvailability() {
     renderIdentityBar();
     showView("lobby");
   } else {
+    // Restore guest display name so lobby actions work after a reload
+    playerName = localStorage.getItem("mishmish-player-name") || "";
     showView("auth");
   }
 
