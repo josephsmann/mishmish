@@ -110,6 +110,7 @@ function handleMessage(msg) {
     case "joined_game":
       inGame = true;
       enteredGame = true;
+      hideResumeCard();
       isCreator = msg.is_creator;
       if (_playingVsBot && msg.is_creator) {
         // Sequentially add a bot then start — server handles both synchronously

@@ -969,7 +969,11 @@ async def websocket_endpoint(ws: WebSocket):
 
     except WebSocketDisconnect:
         player_id = pid[0]
-        connections.pop(player_id, None)
+        # Only deregister if this socket is still the active one for the player —
+        # a reload may have already re-registered the id on a fresh socket, and
+        # popping unconditionally would orphan that new connection.
+        if connections.get(player_id) is ws:
+            connections.pop(player_id, None)
         game_id = player_games.get(player_id)
         log.info(
             "ws disconnect: pid=%s game_id=%s remaining_connections=%d",
@@ -980,7 +984,8 @@ async def websocket_endpoint(ws: WebSocket):
         await broadcast_lobby_state()
     except Exception as exc:
         player_id = pid[0]
-        connections.pop(player_id, None)
+        if connections.get(player_id) is ws:
+            connections.pop(player_id, None)
         if "not connected" in str(exc).lower() or "accept" in str(exc).lower():
             # Socket dropped before/during accept — treat as a normal disconnect
             log.warning("ws stale connection cleaned up: pid=%s", player_id)
