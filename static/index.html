@@ -103,6 +103,17 @@
         <button class="identity-action" id="btn-sign-out" onclick="signOut()" style="display:none">Sign out</button>
       </div>
 
+      <!-- Resume-game card: shown when the player has an open game on fresh load -->
+      <div id="resume-card" style="display:none">
+        <h2>Game in progress</h2>
+        <p id="resume-opponent"></p>
+        <p id="resume-meta"></p>
+        <div class="resume-actions">
+          <button id="btn-resume-rejoin" onclick="resumeRejoin()">Rejoin</button>
+          <button id="btn-resume-abandon" onclick="resumeAbandon()">Abandon game</button>
+        </div>
+      </div>
+
       <div class="lobby-actions">
         <button id="btn-play-bot" onclick="playVsBot()">Play vs Bot</button>
         <button id="btn-create" onclick="createGame()">Create Game</button>

@@ -876,3 +876,35 @@ button:disabled {
 #btn-abort:hover:not(:disabled) {
   background: #78909c;
 }
+
+/* Resume-game card */
+#resume-card {
+  background: #263238;
+  border: 1px solid #4caf50;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 12px 0;
+  text-align: center;
+}
+#resume-card h2 {
+  margin: 0 0 8px;
+  color: #a5d6a7;
+}
+#resume-card p {
+  margin: 4px 0;
+  color: #cfd8dc;
+}
+.resume-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 12px;
+}
+#btn-resume-rejoin {
+  background: #2e7d32;
+  color: #fff;
+}
+#btn-resume-abandon {
+  background: #607d8b;
+  color: #fff;
+}
