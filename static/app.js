@@ -202,6 +202,9 @@ function handleMessage(msg) {
       break;
 
     case "error":
+      _playingVsBot = false;
+      document.getElementById("btn-resume-rejoin").disabled = false;
+      document.getElementById("btn-resume-abandon").disabled = false;
       showError(msg.message);
       if (msg.message === "Cannot remove cards from table") {
         // serverState.table is stale — force reconnect to get fresh state
@@ -228,6 +231,8 @@ function timeAgo(iso) {
 }
 
 function showResumeCard(state) {
+  document.getElementById("btn-resume-rejoin").disabled = false;
+  document.getElementById("btn-resume-abandon").disabled = false;
   const opponents = state.players
     .filter(p => p.id !== playerId)
     .map(p => p.name)
@@ -245,10 +250,14 @@ function showResumeCard(state) {
   if (state.last_activity) bits.push(`last played ${timeAgo(state.last_activity)}`);
   document.getElementById("resume-meta").textContent = bits.join(" · ");
   document.getElementById("resume-card").style.display = "block";
+  document.querySelector("#view-lobby .lobby-actions").style.display = "none";
+  document.getElementById("game-list").style.display = "none";
 }
 
 function hideResumeCard() {
   document.getElementById("resume-card").style.display = "none";
+  document.querySelector("#view-lobby .lobby-actions").style.display = "";
+  document.getElementById("game-list").style.display = "";
 }
 
 function resumeRejoin() {
@@ -266,7 +275,8 @@ function resumeRejoin() {
 }
 
 function resumeAbandon() {
-  hideResumeCard();
+  document.getElementById("btn-resume-rejoin").disabled = true;
+  document.getElementById("btn-resume-abandon").disabled = true;
   send({ type: "abort_game" });
 }
 
