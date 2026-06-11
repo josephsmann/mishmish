@@ -204,8 +204,16 @@ function handleMessage(msg) {
 
     case "error":
       _playingVsBot = false;
-      document.getElementById("btn-resume-rejoin").disabled = false;
-      document.getElementById("btn-resume-abandon").disabled = false;
+      if (document.getElementById("resume-card").style.display !== "none") {
+        // Abort (or rejoin) failed while the resume card was up — the game is
+        // likely gone server-side. Fall back to a clean lobby.
+        hideResumeCard();
+        inGame = false;
+        enteredGame = false;
+        serverState = null;
+        document.getElementById("btn-resume-rejoin").disabled = false;
+        document.getElementById("btn-resume-abandon").disabled = false;
+      }
       showError(msg.message);
       if (msg.message === "Cannot remove cards from table") {
         // serverState.table is stale — force reconnect to get fresh state
