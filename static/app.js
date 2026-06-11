@@ -5,6 +5,7 @@ let serverState = null;
 let stagedHand = [];
 let stagedTable = [];
 let inGame = false;
+let enteredGame = false; // true once this JS session has shown the game/waiting view
 let isCreator = false;
 let playerName = "";
 let dragSource = null;
@@ -108,6 +109,7 @@ function handleMessage(msg) {
 
     case "joined_game":
       inGame = true;
+      enteredGame = true;
       isCreator = msg.is_creator;
       if (_playingVsBot && msg.is_creator) {
         // Sequentially add a bot then start — server handles both synchronously
@@ -150,7 +152,23 @@ function handleMessage(msg) {
           if (_botTimerInterval) { clearInterval(_botTimerInterval); _botTimerInterval = null; }
         }
       }
+      if (!enteredGame && serverState.status !== "ended") {
+        // Fresh page load with a restored game: offer the choice instead of
+        // dropping straight into the game (spec: resume-game prompt).
+        showView("lobby");
+        renderIdentityBar();
+        showResumeCard(serverState);
+        break;
+      }
       if (serverState.status === "ended") {
+        if (!enteredGame) {
+          // Game finished before the player ever entered this session —
+          // nothing to resume, just show the lobby.
+          hideResumeCard();
+          inGame = false;
+          showView("lobby");
+          break;
+        }
         // Keep board visible; overlay the winner banner on top
         hideAbortConfirm();
         syncStaged();
@@ -171,6 +189,8 @@ function handleMessage(msg) {
 
     case "game_aborted":
       inGame = false;
+      enteredGame = false;
+      hideResumeCard();
       serverState = null;
       botTurnStart = null;
       if (_botTimerInterval) { clearInterval(_botTimerInterval); _botTimerInterval = null; }
@@ -195,6 +215,59 @@ function handleMessage(msg) {
 function showView(name) {
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
   document.getElementById(`view-${name}`).classList.add("active");
+}
+
+// ---- Resume card ----
+function timeAgo(iso) {
+  if (!iso) return "";
+  const secs = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 60) return "just now";
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  return `${Math.floor(secs / 86400)}d ago`;
+}
+
+function showResumeCard(state) {
+  const opponents = state.players
+    .filter(p => p.id !== playerId)
+    .map(p => p.name)
+    .join(", ");
+  document.getElementById("resume-opponent").textContent =
+    opponents ? `vs ${opponents}` : "Waiting for players";
+  const bits = [];
+  if (state.status === "playing") {
+    bits.push(state.your_turn ? "Your turn" : `${state.current_player_name}'s turn`);
+    const mine = state.players.find(p => p.id === playerId);
+    if (mine) bits.push(`${mine.hand_size} cards in hand`);
+  } else {
+    bits.push("Not started yet");
+  }
+  if (state.last_activity) bits.push(`last played ${timeAgo(state.last_activity)}`);
+  document.getElementById("resume-meta").textContent = bits.join(" · ");
+  document.getElementById("resume-card").style.display = "block";
+}
+
+function hideResumeCard() {
+  document.getElementById("resume-card").style.display = "none";
+}
+
+function resumeRejoin() {
+  hideResumeCard();
+  enteredGame = true;
+  if (!serverState) return;
+  if (serverState.status === "waiting") {
+    showView("waiting");
+    renderWaiting();
+  } else {
+    syncStaged();
+    showView("game");
+    renderGame();
+  }
+}
+
+function resumeAbandon() {
+  hideResumeCard();
+  send({ type: "abort_game" });
 }
 
 // ---- Auth UI ----
@@ -332,6 +405,8 @@ function signOut() {
   localStorage.removeItem("mishmish-username");
   localStorage.removeItem("mishmish-player-id");
   inGame = false;
+  enteredGame = false;
+  hideResumeCard();
   serverState = null;
   playerName = "";
   showView("auth");
@@ -1015,6 +1090,7 @@ function confirmAbort() {
 
 function backToLobby() {
   inGame = false;
+  enteredGame = false;
   serverState = null;
   renderIdentityBar();
   showView("lobby");
