@@ -204,6 +204,7 @@ class Game:
             "draw_pile_size": len(self.draw_pile),
             "is_creator": player_id == self.creator_id,
             "bot_timeout_seconds": self.bot_timeout_seconds,
+            "last_activity": self.last_activity,
         }
 
     def _get_current_player(self) -> Optional[Dict]:
