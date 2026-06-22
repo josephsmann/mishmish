@@ -1042,7 +1042,6 @@ function drawCard() {
 }
 
 function confirmTurn() {
-  // Guard: ensure no cards were removed from the table (drag-and-drop can silently lose cards)
   if (serverState) {
     const oldCounts = {};
     serverState.table.forEach(meld => meld.forEach(c => {
@@ -1054,10 +1053,18 @@ function confirmTurn() {
       const k = c.rank + c.suit;
       newCounts[k] = (newCounts[k] || 0) + 1;
     }));
+    // Guard: cards removed from the table
     const missing = Object.entries(oldCounts).some(([k, n]) => (newCounts[k] || 0) < n);
     if (missing) {
       showError("Table state corrupted — resetting. Please try again.");
       resetTurn();
+      return;
+    }
+    // Guard: no cards added from hand
+    const oldTotal = Object.values(oldCounts).reduce((a, b) => a + b, 0);
+    const newTotal = Object.values(newCounts).reduce((a, b) => a + b, 0);
+    if (newTotal <= oldTotal) {
+      showError("Play at least one card from your hand before confirming.");
       return;
     }
   }
