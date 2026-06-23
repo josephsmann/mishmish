@@ -494,6 +494,7 @@ button:disabled {
 
 .card.draggable {
   cursor: grab;
+  touch-action: none;
 }
 
 .card.staged-card {
