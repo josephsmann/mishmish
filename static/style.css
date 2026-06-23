@@ -494,6 +494,13 @@ button:disabled {
 
 .card.draggable {
   cursor: grab;
+  touch-action: none; /* iOS: let drag events fire instead of claiming touch for scroll */
+}
+
+/* Drop targets also need touch-action:none so iOS doesn't reclaim the touch mid-drag */
+.meld,
+#new-meld-zone,
+#hand-area {
   touch-action: none;
 }
 
