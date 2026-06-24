@@ -12,5 +12,4 @@ COPY . .
 
 EXPOSE 8080
 
-# Call the venv's uvicorn directly — no uv at runtime, no package reinstall on cold start
-CMD ["/app/.venv/bin/uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
